@@ -1,0 +1,1 @@
+{% extends 'base.html' %}{% block content %}<h1>Состояние системы</h1>{% for name,ok,detail in checks %}<article><b>{{'OK' if ok else 'ERROR'}}</b> — {{name}} — {{detail}}</article>{% endfor %}{% endblock %}
