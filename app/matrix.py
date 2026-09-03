@@ -1,40 +1,90 @@
+from urllib.parse import quote
 import httpx
 from .config import settings
 
-def headers(): return {"Authorization": f"Bearer {settings.matrix_admin_token}"}
-def user_id(username): return f"@{username}:{settings.matrix_server_name}"
+class MatrixError(RuntimeError):
+    pass
 
-async def get_user(uid):
-    url=f"{settings.matrix_homeserver.rstrip('/')}/_synapse/admin/v2/users/{uid}"
-    async with httpx.AsyncClient(timeout=20) as c:
-        r=await c.get(url,headers=headers())
-        if r.status_code==404:return None
-        r.raise_for_status(); return r.json()
+class MatrixClient:
+    def __init__(self):
+        self.base = settings.matrix_homeserver.rstrip("/")
+        self.headers = {"Authorization": f"Bearer {settings.matrix_admin_token}"}
+        self.timeout = settings.matrix_timeout
 
-async def get_users():
-    url=f"{settings.matrix_homeserver.rstrip('/')}/_synapse/admin/v2/users?limit=1000"
-    async with httpx.AsyncClient(timeout=20) as c:
-        r=await c.get(url,headers=headers()); r.raise_for_status(); return r.json().get("users",[])
+    def _request(self, method, path, **kwargs):
+        try:
+            r = httpx.request(method, self.base + path, headers=self.headers, timeout=self.timeout, **kwargs)
+        except httpx.HTTPError as e:
+            raise MatrixError(f"connection error: {e}") from e
+        if r.status_code >= 400:
+            try: body = r.json()
+            except Exception: body = r.text[:500]
+            raise MatrixError(f"HTTP {r.status_code}: {body}")
+        return r
 
-async def create_user(username,password,displayname,admin=False):
-    uid=user_id(username); url=f"{settings.matrix_homeserver.rstrip('/')}/_synapse/admin/v2/users/{uid}"
-    payload={"password":password,"displayname":displayname,"admin":admin,"deactivated":False}
-    async with httpx.AsyncClient(timeout=20) as c:
-        r=await c.put(url,headers={**headers(),"Content-Type":"application/json"},json=payload); r.raise_for_status(); return r.json() if r.content else {}
+    def health(self):
+        r = httpx.get(self.base + "/_matrix/client/versions", timeout=self.timeout)
+        r.raise_for_status()
+        return r.json()
 
-async def set_password(uid,password):
-    url=f"{settings.matrix_homeserver.rstrip('/')}/_synapse/admin/v2/users/{uid}"
-    async with httpx.AsyncClient(timeout=20) as c:
-        r=await c.put(url,headers={**headers(),"Content-Type":"application/json"},json={"password":password}); r.raise_for_status()
+    def admin_health(self):
+        r = self._request("GET", "/_synapse/admin/v2/users?limit=1")
+        return r.json()
 
-async def set_deactivated(uid,value):
-    url=f"{settings.matrix_homeserver.rstrip('/')}/_synapse/admin/v2/users/{uid}"
-    async with httpx.AsyncClient(timeout=20) as c:
-        r=await c.put(url,headers={**headers(),"Content-Type":"application/json"},json={"deactivated":value}); r.raise_for_status()
+    def get_user(self, user_id):
+        return self._request("GET", f"/_synapse/admin/v2/users/{quote(user_id, safe='')}").json()
 
-async def invite_to_global(uid):
-    if not settings.global_room_id: raise RuntimeError("GLOBAL_ROOM_ID is not configured")
-    url=f"{settings.matrix_homeserver.rstrip('/')}/_matrix/client/v3/rooms/{settings.global_room_id}/invite"
-    async with httpx.AsyncClient(timeout=20) as c:
-        r=await c.post(url,headers={**headers(),"Content-Type":"application/json"},json={"user_id":uid})
-        if r.status_code not in (200,201,202,403): r.raise_for_status()
+    def list_users(self, limit=1000):
+        return self._request("GET", f"/_synapse/admin/v2/users?limit={limit}").json()
+
+    def create_user(self, user_id, password, displayname="", admin=False):
+        try:
+            payload = {
+                "password": password,
+                "displayname": displayname,
+                "admin": admin,
+                "deactivated": False
+            }
+            self._request("PUT", f"/_synapse/admin/v2/users/{quote(user_id, safe='')}", json=payload)
+
+            # Приглашаем нового пользователя в глобальную комнату
+            # Если администратор не является участником комнаты, нужно использовать сервисного бота
+            inviter_user_id = f"@{settings.admin_username}:{settings.matrix_server_name}"
+
+            # Проверяем, что пользователь создан
+            user_data = self.get_user(user_id)
+            if user_data.get("name") == user_id:
+                # Добавляем задержку, чтобы пользователь успел создаться
+                import time
+                time.sleep(1)
+
+                # Отправляем приглашение
+                self.invite_to_room(settings.global_room_id, user_id, inviter_user_id)
+
+        except Exception as e:
+            # Логируем ошибку, но не прерываем создание пользователя
+            print(f"Warning: Could not invite user {user_id} to global room: {e}")
+            # Можно также перевыбросить исключение, если это критично
+            raise MatrixError(f"Failed to create user and invite to room: {e}")
+
+    def update_user(self, user_id, **payload):
+        self._request("PUT", f"/_synapse/admin/v2/users/{quote(user_id, safe='')}", json=payload)
+
+    def invite_to_room(self, room_id, user_id, inviter_user_id):
+        # Requires a valid Matrix client access token for the inviter. The current admin token
+        # may be accepted by Synapse only if it is also a normal client token.
+        url = self.base + f"/_matrix/client/v3/rooms/{quote(room_id, safe='')}/invite"
+        body = {"user_id": user_id}
+        try:
+            r = httpx.post(url, headers=self.headers, json=body, timeout=self.timeout)
+        except httpx.HTTPError as e:
+            raise MatrixError(f"invite connection error: {e}") from e
+        if r.status_code >= 400:
+            try: detail = r.json()
+            except Exception: detail = r.text[:500]
+            raise MatrixError(f"invite HTTP {r.status_code}: {detail}")
+
+    def room_health(self):
+        # Admin API does not expose a generic "room exists" check with this token.
+        # A real client token is required for membership/invite operations.
+        return {"room_id": settings.global_room_id, "note": "membership check requires client-capable token"}

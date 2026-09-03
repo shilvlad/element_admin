@@ -1,125 +1,172 @@
-import secrets,string
-from datetime import datetime, timezone
-from pathlib import Path
-from fastapi import FastAPI,Request,Form
-from fastapi.responses import HTMLResponse,RedirectResponse
-from fastapi.templating import Jinja2Templates
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, Request, Form
+from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
-from sqlalchemy import select,desc
+from sqlalchemy import select, desc
 from .config import settings
-from .db import SessionLocal,init_db,RegistrationRequest,ManagedUser,AuditLog,audit
-from .matrix import create_user,invite_to_global,get_users,get_user,set_password,set_deactivated,user_id
-from .mail import send_mail
+from .db import SessionLocal, init_db, RegistrationRequest, ManagedUser, AuditLog, audit
+from .security import encrypt_secret, decrypt_secret, generate_password
+from .matrix import MatrixClient, MatrixError
+from .mail import send_moderation_notice
 
-app=FastAPI(title=settings.app_name)
-app.add_middleware(SessionMiddleware,secret_key=settings.secret_key,session_cookie="sum_session",same_site="lax")
-app.mount("/static",StaticFiles(directory=Path(__file__).parent/"static"),name="static")
-templates=Jinja2Templates(directory=Path(__file__).parent/"templates")
-@app.on_event("startup")
-def startup(): init_db()
-def pwd(): return ''.join(secrets.choice(string.ascii_letters+string.digits+"!@#$%&*?") for _ in range(16))
-def auth(r): return r.session.get("user")
-def guard(r): return None if auth(r) else RedirectResponse("/login",303)
-def render(r,t,**x): return templates.TemplateResponse(t,{"request":r,**x})
-def ip(r): return r.client.host if r.client else ""
+@asynccontextmanager
+async def lifespan(app):
+    init_db()
+    yield
 
-@app.get("/login",response_class=HTMLResponse)
-def login_page(request:Request): return render(request,"login.html",error=None)
+app = FastAPI(title=settings.app_name, lifespan=lifespan)
+app.add_middleware(SessionMiddleware, secret_key=settings.secret_key, https_only=settings.app_base_url.startswith("https://"), same_site="lax", max_age=28800)
+templates = Jinja2Templates(directory="app/templates")
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
+def admin_required(request: Request):
+    return request.session.get("admin") is True
+
+def login_redirect(): return RedirectResponse("/login", status_code=303)
+def actor(request): return request.session.get("username", "unknown")
+def client_ip(request): return request.client.host if request.client else "-"
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page(request: Request): return templates.TemplateResponse("login.html", {"request": request})
+
 @app.post("/login")
-def login(request:Request,username:str=Form(...),password:str=Form(...)):
-    if secrets.compare_digest(username,settings.admin_username) and secrets.compare_digest(password,settings.admin_password):
-        request.session["user"]=username; return RedirectResponse("/",303)
-    return render(request,"login.html",error="Неверный логин или пароль")
+def login(request: Request, username: str = Form(...), password: str = Form(...)):
+    if username == settings.admin_username and password == settings.admin_password:
+        request.session.update({"admin": True, "username": username})
+        with SessionLocal() as db: audit(db, username, "LOGIN", "admin", client_ip(request)); db.commit()
+        return RedirectResponse("/", status_code=303)
+    return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный логин или пароль"}, status_code=401)
+
 @app.get("/logout")
-def logout(request:Request): request.session.clear(); return RedirectResponse("/login",303)
+def logout(request: Request): request.session.clear(); return RedirectResponse("/login", status_code=303)
 
-@app.get("/",response_class=HTMLResponse)
-def dashboard(request:Request):
-    if (x:=guard(request)): return x
+@app.get("/")
+def dashboard(request: Request):
+    if not admin_required(request): return login_redirect()
     with SessionLocal() as db:
-        pending=len(db.scalars(select(RegistrationRequest).where(RegistrationRequest.status=="PENDING")).all())
-        users=len(db.scalars(select(ManagedUser)).all()); logs=db.scalars(select(AuditLog).order_by(desc(AuditLog.ts)).limit(10)).all()
-    return render(request,"dashboard.html",pending=pending,users=users,logs=logs)
+        pending = db.scalar(select(RegistrationRequest).where(RegistrationRequest.status == "PENDING").count()) if False else len(db.scalars(select(RegistrationRequest).where(RegistrationRequest.status == "PENDING")).all())
+        users = len(db.scalars(select(ManagedUser)).all())
+    return templates.TemplateResponse("dashboard.html", {"request": request, "pending": pending, "users": users})
 
-@app.get("/request",response_class=HTMLResponse)
-def request_page(request:Request):
-    if (x:=guard(request)): return x
-    return render(request,"request.html",error=None,generated=pwd())
+@app.get("/request")
+def request_page(request: Request): return templates.TemplateResponse("request.html", {"request": request})
+
 @app.post("/request")
-async def request_create(request:Request,username:str=Form(...),displayname:str=Form(...),requester:str=Form(...),new_password:str=Form(...),is_admin:bool=Form(False)):
-    if (x:=guard(request)): return x
-    username=username.strip().lower().lstrip("@")
+def create_request(request: Request, username: str = Form(...), displayname: str = Form(""), requester: str = Form(...), is_admin: bool = Form(False)):
+    username = username.strip().lower().lstrip("@").split(":")[0]
+    if not username or any(c not in "abcdefghijklmnopqrstuvwxyz0123456789._=-" for c in username):
+        return templates.TemplateResponse("request.html", {"request": request, "error": "Недопустимый Matrix username"}, status_code=400)
+    password = generate_password()
     with SessionLocal() as db:
-        existing=db.scalar(select(RegistrationRequest).where(RegistrationRequest.username==username,RegistrationRequest.status=="PENDING"))
-        if existing:return render(request,"request.html",error="Для этого логина уже есть заявка.",generated=new_password)
-        if await get_user(user_id(username)):return render(request,"request.html",error="Такой пользователь уже существует в Synapse.",generated=new_password)
-        db.add(RegistrationRequest(username=username,displayname=displayname.strip(),requester=requester.strip(),password=new_password,is_admin=is_admin))
-        audit(db,auth(request),"CREATE_REQUEST",user_id(username),ip(request),"Registration request created");db.commit()
-    send_mail("[Matrix] Требуется подтверждение регистрации",f"<h2>Новая заявка Matrix</h2><p><b>Логин:</b> @{username}:{settings.matrix_server_name}</p><p><b>ФИО:</b> {displayname}</p><p><b>Инициатор:</b> {requester}</p><p><a href='{settings.matrix_homeserver}/requests'>Открыть модерацию</a></p>")
-    return RedirectResponse("/requests",303)
+        req = RegistrationRequest(requester=requester.strip(), username=username, displayname=displayname.strip(), password_enc=encrypt_secret(password), is_admin=is_admin, status="PENDING")
+        db.add(req); db.flush(); audit(db, requester, "REGISTRATION_REQUEST", f"request:{req.id}", client_ip(request), f"username={username}"); db.commit(); rid=req.id
+    try: send_moderation_notice(rid, username, requester)
+    except Exception: pass
+    return templates.TemplateResponse("result.html", {"request": request, "message": f"Заявка #{rid} создана и отправлена на модерацию."})
 
-@app.get("/requests",response_class=HTMLResponse)
-def requests_page(request:Request):
-    if (x:=guard(request)): return x
-    with SessionLocal() as db: rows=db.scalars(select(RegistrationRequest).order_by(desc(RegistrationRequest.created_at))).all()
-    return render(request,"requests.html",rows=rows)
+@app.get("/requests")
+def requests_page(request: Request):
+    if not admin_required(request): return login_redirect()
+    with SessionLocal() as db: rows = db.scalars(select(RegistrationRequest).order_by(desc(RegistrationRequest.created_at))).all()
+    return templates.TemplateResponse("requests.html", {"request": request, "rows": rows})
+
 @app.post("/requests/{rid}/approve")
-async def approve(request:Request,rid:int):
-    if (x:=guard(request)): return x
+def approve(request: Request, rid: int):
+    if not admin_required(request): return login_redirect()
     with SessionLocal() as db:
-        row=db.get(RegistrationRequest,rid)
-        if not row or row.status!="PENDING":return RedirectResponse("/requests",303)
-        uid=user_id(row.username)
+        req=db.get(RegistrationRequest,rid)
+        if not req: return RedirectResponse("/requests",303)
+        if req.status not in ("PENDING","ERROR"): return RedirectResponse("/requests",303)
+        req.status="CREATING"; req.error_message=None; db.commit()
         try:
-            await create_user(row.username,row.password,row.displayname,row.is_admin); await invite_to_global(uid)
-            row.status="APPROVED";row.decided_by=auth(request);row.decided_at=datetime.now(timezone.utc)
-            db.add(ManagedUser(user_id=uid,username=row.username,displayname=row.displayname));audit(db,auth(request),"APPROVE_USER",uid,ip(request),"Created and invited to #Global")
+            password=decrypt_secret(req.password_enc)
+            uid=f"@{req.username}:{settings.matrix_server_name}"
+            m=MatrixClient(); m.create_user(uid,password,req.displayname,req.is_admin)
+            req.status="CREATED"; db.commit()
+            # Password is no longer needed after successful user creation.
+            req.password_enc=None
+            managed=db.scalar(select(ManagedUser).where(ManagedUser.user_id==uid))
+            if not managed: db.add(ManagedUser(user_id=uid,username=req.username,displayname=req.displayname,active=True))
+            req.status="APPROVED"; req.decided_by=actor(request); req.decided_at=__import__('datetime').datetime.now(__import__('datetime').timezone.utc)
+            audit(db, actor(request), "APPROVE_REGISTRATION", uid, client_ip(request), f"request={rid}")
+            db.commit()
         except Exception as e:
-            row.status="ERROR";audit(db,auth(request),"APPROVE_USER_ERROR",uid,ip(request),str(e))
-        db.commit()
-    return RedirectResponse("/requests",303)
-@app.post("/requests/{rid}/reject")
-def reject(request:Request,rid:int,reason:str=Form("")):
-    if (x:=guard(request)): return x
-    with SessionLocal() as db:
-        row=db.get(RegistrationRequest,rid)
-        if row and row.status=="PENDING":
-            row.status="REJECTED";row.reject_reason=reason;row.decided_by=auth(request);row.decided_at=datetime.now(timezone.utc);audit(db,auth(request),"REJECT_REQUEST",user_id(row.username),ip(request),reason);db.commit()
+            req.status="ERROR"; req.error_message=str(e)[:1000]; audit(db, actor(request), "APPROVE_ERROR", f"request:{rid}", client_ip(request), str(e)[:1000]); db.commit()
     return RedirectResponse("/requests",303)
 
-@app.get("/users",response_class=HTMLResponse)
-async def users_page(request:Request,q:str=""):
-    if (x:=guard(request)): return x
-    data=await get_users();q=q.lower().strip()
-    if q:data=[u for u in data if q in str(u.get("name","")).lower() or q in str(u.get("displayname","")).lower()]
-    return render(request,"users.html",users=data,q=q)
-@app.post("/users/{uid}/reset-password")
-async def reset_password(request:Request,uid:str,new_password:str=Form("")):
-    if (x:=guard(request)): return x
-    new_password=new_password or pwd();await set_password(uid,new_password)
-    with SessionLocal() as db:audit(db,auth(request),"RESET_PASSWORD",uid,ip(request),"Password reset");db.commit()
-    return render(request,"result.html",title="Пароль сброшен",message=f"Новый пароль: {new_password}")
-@app.post("/users/{uid}/deactivate")
-async def deactivate(request:Request,uid:str):
-    if (x:=guard(request)): return x
-    await set_deactivated(uid,True)
+@app.post("/requests/{rid}/reject")
+def reject(request: Request, rid: int, reason: str = Form("")):
+    if not admin_required(request): return login_redirect()
     with SessionLocal() as db:
-        u=db.scalar(select(ManagedUser).where(ManagedUser.user_id==uid));
-        if u:u.active=False
-        audit(db,auth(request),"DEACTIVATE_USER",uid,ip(request),"User deactivated");db.commit()
+        req=db.get(RegistrationRequest,rid)
+        if req and req.status=="PENDING":
+            req.status="REJECTED"; req.decided_by=actor(request); req.reject_reason=reason; req.decided_at=__import__('datetime').datetime.now(__import__('datetime').timezone.utc); req.password_enc=None
+            audit(db,actor(request),"REJECT_REGISTRATION",f"request:{rid}",client_ip(request),reason); db.commit()
+    return RedirectResponse("/requests",303)
+
+@app.get("/users")
+def users_page(request: Request, q: str = ""):
+    if not admin_required(request): return login_redirect()
+    data=MatrixClient().list_users(1000).get("users",[])
+    if q: data=[u for u in data if q.lower() in str(u).lower()]
+    return templates.TemplateResponse("users.html", {"request": request, "users": data, "q": q})
+
+@app.post("/users/{user_id:path}/password")
+def reset_password(request: Request, user_id: str):
+    if not admin_required(request): return login_redirect()
+    pwd=generate_password()
+    try:
+        MatrixClient().update_user(user_id,password=pwd)
+        with SessionLocal() as db: audit(db,actor(request),"RESET_PASSWORD",user_id,client_ip(request)); db.commit()
+        return templates.TemplateResponse("result.html", {"request":request,"message":f"Пароль сброшен для {user_id}.","secret":pwd})
+    except Exception as e: return templates.TemplateResponse("result.html", {"request":request,"message":f"Ошибка: {e}"},status_code=502)
+
+@app.post("/users/{user_id:path}/deactivate")
+def deactivate(request: Request,user_id:str):
+    if not admin_required(request): return login_redirect()
+    try: MatrixClient().update_user(user_id,deactivated=True); msg="деактивирован"; action="DEACTIVATE"
+    except Exception as e: return templates.TemplateResponse("result.html", {"request":request,"message":str(e)},status_code=502)
+    with SessionLocal() as db: audit(db,actor(request),action,user_id,client_ip(request)); db.commit()
     return RedirectResponse("/users",303)
-@app.post("/users/{uid}/activate")
-async def activate(request:Request,uid:str):
-    if (x:=guard(request)): return x
-    await set_deactivated(uid,False)
-    with SessionLocal() as db:
-        u=db.scalar(select(ManagedUser).where(ManagedUser.user_id==uid));
-        if u:u.active=True
-        audit(db,auth(request),"ACTIVATE_USER",uid,ip(request),"User activated");db.commit()
+
+@app.post("/users/{user_id:path}/activate")
+def activate(request: Request,user_id:str):
+    if not admin_required(request): return login_redirect()
+    try: MatrixClient().update_user(user_id,deactivated=False); action="ACTIVATE"
+    except Exception as e: return templates.TemplateResponse("result.html", {"request":request,"message":str(e)},status_code=502)
+    with SessionLocal() as db: audit(db,actor(request),action,user_id,client_ip(request)); db.commit()
     return RedirectResponse("/users",303)
-@app.get("/audit",response_class=HTMLResponse)
-def audit_page(request:Request):
-    if (x:=guard(request)): return x
-    with SessionLocal() as db:logs=db.scalars(select(AuditLog).order_by(desc(AuditLog.ts)).limit(500)).all()
-    return render(request,"audit.html",logs=logs)
+
+@app.get("/audit")
+def audit_page(request: Request):
+    if not admin_required(request): return login_redirect()
+    with SessionLocal() as db: rows=db.scalars(select(AuditLog).order_by(desc(AuditLog.ts)).limit(500)).all()
+    return templates.TemplateResponse("audit.html", {"request":request,"rows":rows})
+
+@app.get("/health")
+def health(): return {"status":"ok","service":"synapse-user-manager"}
+
+@app.get("/diagnostics")
+def diagnostics(request: Request):
+    if not admin_required(request): return login_redirect()
+    if not settings.enable_diagnostics: return HTMLResponse("disabled", status_code=404)
+    checks=[]
+    try:
+        MatrixClient().health()
+        checks.append(("Synapse client API / TLS", True, "OK"))
+    except Exception as e:
+        checks.append(("Synapse client API / TLS", False, str(e)[:500]))
+    try:
+        MatrixClient().admin_health()
+        checks.append(("Synapse Admin API + token", True, "OK"))
+    except Exception as e:
+        checks.append(("Synapse Admin API + token", False, str(e)[:500]))
+    try:
+        with SessionLocal() as db:
+            db.execute(select(AuditLog).limit(1)).all()
+        checks.append(("Database", True, "OK"))
+    except Exception as e:
+        checks.append(("Database", False, str(e)[:500]))
+    return templates.TemplateResponse("diagnostics.html", {"request": request, "checks": checks})

@@ -1,1 +1,56 @@
-{% extends "base.html" %}{% block content %}<h1>Пользователи Synapse</h1><form class="search"><input name="q" value="{{ q }}" placeholder="Логин или ФИО"><button>Найти</button></form><table><tr><th>User ID</th><th>ФИО</th><th>Статус</th><th>Действия</th></tr>{% for u in users %}<tr><td>{{ u.name }}</td><td>{{ u.displayname or "" }}</td><td>{% if u.deactivated %}<span class="badge rejected">DEACTIVATED</span>{% else %}<span class="badge approved">ACTIVE</span>{% endif %}</td><td><form class="inline" method="post" action="/users/{{ u.name }}/reset-password"><button>Сбросить пароль</button></form>{% if u.deactivated %}<form class="inline" method="post" action="/users/{{ u.name }}/activate"><button>Активировать</button></form>{% else %}<form class="inline" method="post" action="/users/{{ u.name }}/deactivate"><button class="danger">Деактивировать</button></form>{% endif %}</td></tr>{% endfor %}</table>{% endblock %}
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Пользователи</h1>
+
+<form method="get" class="search">
+    <input
+        type="text"
+        name="q"
+        value="{{ q or '' }}"
+        placeholder="Поиск по логину или имени">
+    <button type="submit">Найти</button>
+</form>
+
+<div class="card">
+
+{% for u in users %}
+<div class="user-row">
+
+    <div class="user-info">
+        <div class="user-name">{{ u.name }}</div>
+
+        <div class="user-meta">
+            <span>{{ u.displayname or "Без отображаемого имени" }}</span>
+
+            {% if u.admin %}
+                • <span>Администратор</span>
+            {% endif %}
+
+            {% if u.deactivated %}
+                • <span class="badge rejected">Отключен</span>
+            {% else %}
+                • <span class="badge approved">Активен</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="user-actions">
+        <form method="post" action="/users/{{ u.name }}/reset_password">
+            <button type="submit">Сбросить пароль</button>
+        </form>
+
+        {% if not u.deactivated %}
+        <form method="post" action="/users/{{ u.name }}/deactivate">
+            <button type="submit" class="danger">Деактивировать</button>
+        </form>
+        {% endif %}
+    </div>
+
+</div>
+{% else %}
+<p>Пользователи не найдены.</p>
+{% endfor %}
+
+</div>
+{% endblock %}

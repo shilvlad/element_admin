@@ -1,1 +1,1 @@
-{% extends "base.html" %}{% block content %}<h1>Журнал операций</h1><table><tr><th>Время</th><th>Actor</th><th>Action</th><th>Target</th><th>IP</th><th>Details</th></tr>{% for l in logs %}<tr><td>{{ l.ts }}</td><td>{{ l.actor }}</td><td>{{ l.action }}</td><td>{{ l.target }}</td><td>{{ l.ip }}</td><td>{{ l.details }}</td></tr>{% endfor %}</table>{% endblock %}
+{% extends 'base.html' %}{% block content %}<h1>Аудит</h1>{% for r in rows %}<article><b>{{r.ts}}</b> {{r.actor}} — {{r.action}} — {{r.target}} — {{r.details}}</article>{% endfor %}{% endblock %}

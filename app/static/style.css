@@ -1,1 +1,297 @@
-*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#e2e8f0;font-family:Inter,Arial,sans-serif}header{min-height:64px;background:#111827;border-bottom:1px solid #334155;display:flex;align-items:center;padding:0 28px;gap:40px;flex-wrap:wrap}header b{font-size:18px;color:#6ee7b7}nav{display:flex;gap:20px;flex-wrap:wrap}nav a{color:#cbd5e1;text-decoration:none;font-size:14px}main{max-width:1200px;margin:30px auto;padding:0 20px}h1{margin-bottom:24px}.card{background:#1e293b;border:1px solid #334155;border-radius:14px;padding:24px;max-width:520px}label{display:block;margin:14px 0;color:#cbd5e1;font-size:14px}input{width:100%;padding:11px 12px;border-radius:9px;border:1px solid #475569;background:#0f172a;color:#fff;margin-top:6px}button{border:0;border-radius:8px;background:#10b981;color:#052e1f;font-weight:700;padding:10px 14px;cursor:pointer}.danger{background:#ef4444;color:#fff}.error{background:#7f1d1d;color:#fecaca;padding:12px;border-radius:8px;margin-bottom:16px}.grid{display:flex;gap:18px}.stat{background:#1e293b;border:1px solid #334155;border-radius:14px;padding:22px;min-width:220px}.stat b{display:block;font-size:30px;color:#6ee7b7}.stat span{color:#94a3b8}table{width:100%;border-collapse:collapse;background:#111827;border-radius:12px;overflow:hidden}th,td{text-align:left;padding:12px;border-bottom:1px solid #1f2937;font-size:13px}th{color:#94a3b8}.badge{padding:4px 8px;border-radius:99px;font-size:11px}.pending{background:#78350f;color:#fde68a}.approved{background:#064e3b;color:#a7f3d0}.rejected{background:#7f1d1d;color:#fecaca}.inline{display:inline-flex;margin-right:6px;gap:5px}.inline input{width:140px;margin:0}.search{display:flex;gap:8px;margin-bottom:18px}.search input{max-width:400px}.search button{margin-top:6px}.check{display:flex;gap:8px;align-items:center}.check input{width:auto}.login{max-width:440px;margin:120px auto}
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    background: #0f172a;
+    color: #e2e8f0;
+    font-family: Inter, Arial, sans-serif;
+}
+
+header {
+    height: 64px;
+    background: #111827;
+    border-bottom: 1px solid #334155;
+    display: flex;
+    align-items: center;
+    padding: 0 28px;
+    gap: 36px;
+}
+
+header b {
+    color: #6ee7b7;
+    font-size: 18px;
+}
+
+nav {
+    display: flex;
+    gap: 22px;
+}
+
+nav a {
+    color: #cbd5e1;
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+nav a:hover {
+    color: #6ee7b7;
+}
+
+main {
+    max-width: 1200px;
+    margin: 28px auto;
+    padding: 0 20px;
+}
+
+h1 {
+    margin: 0 0 24px;
+    color: #fff;
+    font-size: 36px;
+}
+
+h2, h3 {
+    color: #fff;
+}
+
+.card {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 14px;
+    padding: 24px;
+}
+
+.grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px;
+}
+
+.stat {
+    min-width: 220px;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 14px;
+    padding: 22px;
+}
+
+.stat b {
+    display: block;
+    font-size: 30px;
+    color: #6ee7b7;
+}
+
+.stat span {
+    color: #94a3b8;
+}
+
+label {
+    display: block;
+    margin-bottom: 14px;
+    color: #cbd5e1;
+    font-size: 14px;
+}
+
+input {
+    width: 100%;
+    padding: 11px 12px;
+    margin-top: 6px;
+    border-radius: 8px;
+    border: 1px solid #475569;
+    background: #0f172a;
+    color: #fff;
+}
+
+input:focus {
+    outline: none;
+    border-color: #10b981;
+}
+
+button {
+    background: #10b981;
+    color: #052e1f;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+button:hover {
+    background: #34d399;
+}
+
+.danger {
+    background: #ef4444;
+    color: white;
+}
+
+.danger:hover {
+    background: #f87171;
+}
+
+.search {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.search input {
+    max-width: 420px;
+    margin-top: 0;
+}
+
+.search button {
+    min-width: 90px;
+}
+
+.badge {
+    display: inline-block;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.approved {
+    background: #064e3b;
+    color: #a7f3d0;
+}
+
+.pending {
+    background: #78350f;
+    color: #fde68a;
+}
+
+.rejected {
+    background: #7f1d1d;
+    color: #fecaca;
+}
+
+.user-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+    padding: 18px 0;
+    border-bottom: 1px solid #334155;
+}
+
+.user-row:last-child {
+    border-bottom: none;
+}
+
+.user-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.user-name {
+    color: #fff;
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 6px;
+}
+
+.user-meta {
+    color: #94a3b8;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.user-actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.user-actions form {
+    margin: 0;
+}
+
+.user-actions button {
+    padding: 9px 14px;
+    white-space: nowrap;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #111827;
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+th, td {
+    padding: 12px;
+    text-align: left;
+    border-bottom: 1px solid #1f2937;
+}
+
+th {
+    color: #94a3b8;
+}
+
+.error {
+    background: #7f1d1d;
+    color: #fecaca;
+    padding: 12px;
+    border-radius: 8px;
+    margin-bottom: 18px;
+}
+
+article {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 18px;
+    margin-bottom: 12px;
+}
+
+a {
+    color: #6ee7b7;
+}
+
+@media (max-width: 768px) {
+    header {
+        height: auto;
+        padding: 14px 18px;
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    nav {
+        flex-wrap: wrap;
+        gap: 14px;
+    }
+
+    .search {
+        flex-direction: column;
+    }
+
+    .search input {
+        max-width: 100%;
+    }
+
+    .user-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .user-actions {
+        width: 100%;
+    }
+
+    .user-actions form {
+        flex: 1;
+    }
+
+    .user-actions button {
+        width: 100%;
+    }
+}
