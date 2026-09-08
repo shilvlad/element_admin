@@ -54,13 +54,13 @@ def dashboard(request: Request):
 def request_page(request: Request): return templates.TemplateResponse("request.html", {"request": request})
 
 @app.post("/request")
-def create_request(request: Request, username: str = Form(...), displayname: str = Form(""), requester: str = Form(...), is_admin: bool = Form(False)):
+def create_request(request: Request, username: str = Form(...), displayname: str = Form(""), requester: str = Form(...)):
     username = username.strip().lower().lstrip("@").split(":")[0]
     if not username or any(c not in "abcdefghijklmnopqrstuvwxyz0123456789._=-" for c in username):
         return templates.TemplateResponse("request.html", {"request": request, "error": "Недопустимый Matrix username"}, status_code=400)
     password = generate_password()
     with SessionLocal() as db:
-        req = RegistrationRequest(requester=requester.strip(), username=username, displayname=displayname.strip(), password_enc=encrypt_secret(password), is_admin=is_admin, status="PENDING")
+        req = RegistrationRequest(requester=requester.strip(), username=username, displayname=displayname.strip(), password_enc=encrypt_secret(password), is_admin=False, status="PENDING")
         db.add(req); db.flush(); audit(db, requester, "REGISTRATION_REQUEST", f"request:{req.id}", client_ip(request), f"username={username}"); db.commit(); rid=req.id
     try: send_moderation_notice(rid, username, requester)
     except Exception: pass
