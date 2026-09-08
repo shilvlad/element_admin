@@ -1,1 +1,35 @@
-{% extends 'base.html' %}{% block content %}<h1>Заявки</h1>{% for r in rows %}<article><b>#{{r.id}}</b> {{r.username}} — {{r.status}} — {{r.requester}}{% if r.error_message %}<p class="error">{{r.error_message}}</p>{% endif %}{% if r.status in ['PENDING','ERROR'] %}<form method="post" action="/requests/{{r.id}}/approve"><button>Одобрить</button></form>{% endif %}{% if r.status=='PENDING' %}<form method="post" action="/requests/{{r.id}}/reject"><input name="reason" placeholder="Причина отказа"><button>Отклонить</button></form>{% endif %}</article>{% else %}<p>Заявок нет.</p>{% endfor %}{% endblock %}
+{% extends 'base.html' %}
+
+{% block content %}
+<h1>Заявки</h1>
+
+{% for r in rows %}
+<article>
+    <b>#{{r.id}}</b> {{r.username}} — {{r.status}} — {{r.requester}}
+
+    {% if r.error_message %}
+    <p class="error">{{r.error_message}}</p>
+    {% endif %}
+
+    {% if r.status in ['PENDING','ERROR'] %}
+    <form method="post" action="/requests/{{r.id}}/approve">
+        <label>
+            <input type="checkbox" name="is_admin" value="true">
+            Администратор
+        </label>
+        <button>Одобрить</button>
+    </form>
+    {% endif %}
+
+    {% if r.status=='PENDING' %}
+    <form method="post" action="/requests/{{r.id}}/reject">
+        <input name="reason" placeholder="Причина отказа">
+        <button>Отклонить</button>
+    </form>
+    {% endif %}
+</article>
+{% else %}
+<p>Заявок нет.</p>
+{% endfor %}
+
+{% endblock %}

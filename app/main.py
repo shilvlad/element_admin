@@ -73,7 +73,7 @@ def requests_page(request: Request):
     return templates.TemplateResponse("requests.html", {"request": request, "rows": rows})
 
 @app.post("/requests/{rid}/approve")
-def approve(request: Request, rid: int):
+def approve(request: Request, rid: int, is_admin: bool = Form(False)):
     if not admin_required(request): return login_redirect()
     with SessionLocal() as db:
         req=db.get(RegistrationRequest,rid)
@@ -83,7 +83,7 @@ def approve(request: Request, rid: int):
         try:
             password=decrypt_secret(req.password_enc)
             uid=f"@{req.username}:{settings.matrix_server_name}"
-            m=MatrixClient(); m.create_user(uid,password,req.displayname,req.is_admin)
+            m=MatrixClient(); m.create_user(uid,password,req.displayname,is_admin)
             req.status="CREATED"; db.commit()
             # Password is no longer needed after successful user creation.
             req.password_enc=None
