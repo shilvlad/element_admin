@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     smtp_starttls: bool = True
     admin_email: str
     admin_username: str
-    admin_password: str
+    admin_password_hash: str
     enable_diagnostics: bool = True
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

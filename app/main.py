@@ -10,6 +10,9 @@ from .db import SessionLocal, init_db, RegistrationRequest, ManagedUser, AuditLo
 from .security import encrypt_secret, decrypt_secret, generate_password
 from .matrix import MatrixClient, MatrixError
 from .mail import send_moderation_notice
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError
+
 
 @asynccontextmanager
 async def lifespan(app):
@@ -19,6 +22,7 @@ async def lifespan(app):
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
 app.add_middleware(SessionMiddleware, secret_key=settings.secret_key, https_only=settings.app_base_url.startswith("https://"), same_site="lax", max_age=28800)
 templates = Jinja2Templates(directory="app/templates")
+password_hasher = PasswordHasher()
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 def admin_required(request: Request):
@@ -33,11 +37,19 @@ def login_page(request: Request): return templates.TemplateResponse("login.html"
 
 @app.post("/login")
 def login(request: Request, username: str = Form(...), password: str = Form(...)):
-    if username == settings.admin_username and password == settings.admin_password:
-        request.session.update({"admin": True, "username": username})
-        with SessionLocal() as db: audit(db, username, "LOGIN", "admin", client_ip(request)); db.commit()
-        return RedirectResponse("/", status_code=303)
-    return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный логин или пароль"}, status_code=401)
+    if username == settings.admin_username:
+        try:
+            password_hasher.verify(settings.admin_password_hash, password)
+            request.session.update({"admin": True, "username": username})
+            return RedirectResponse("/", status_code=303)
+        except VerifyMismatchError:
+            pass
+
+    return templates.TemplateResponse(
+        "login.html",
+        {"request": request, "error": "Неверный логин или пароль"},
+        status_code=401,
+    )
 
 @app.get("/logout")
 def logout(request: Request): request.session.clear(); return RedirectResponse("/login", status_code=303)
