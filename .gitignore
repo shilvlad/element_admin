@@ -1,6 +1,8 @@
-.idea/
-.venv/
-data/*
-__pycache__/
+.git
+.idea
+.venv
+__pycache__
 *.py[cod]
+data
 .env
+
