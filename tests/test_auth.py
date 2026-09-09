@@ -5,10 +5,10 @@ from app.config import settings
 from app.main import app
 
 
-client = TestClient(app)
 
 
-def test_admin_login_success(monkeypatch):
+
+def test_admin_login_success(client, monkeypatch):
     password = "test-password"
     password_hash = PasswordHasher().hash(password)
 
@@ -32,7 +32,7 @@ def test_admin_login_success(monkeypatch):
     assert response.status_code == 200
 
 
-def test_admin_login_wrong_password(monkeypatch):
+def test_admin_login_wrong_password(client, monkeypatch):
     password_hash = PasswordHasher().hash("correct-password")
 
     monkeypatch.setattr(settings, "admin_username", "test-admin")

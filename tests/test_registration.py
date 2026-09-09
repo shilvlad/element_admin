@@ -7,7 +7,7 @@ from app.main import app
 client = TestClient(app)
 
 
-def test_public_registration_cannot_create_admin(monkeypatch):
+def test_public_registration_cannot_create_admin(client, monkeypatch):
     monkeypatch.setattr(
         "app.main.send_moderation_notice",
         lambda *args, **kwargs: None,
