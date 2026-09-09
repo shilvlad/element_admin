@@ -14,6 +14,20 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    env:
+      SECRET_KEY: ci-test-secret
+      PASSWORD_ENCRYPTION_KEY: Y0WAbD43xfa-XkTPNXZHX0eAvup-V84_QIuVjBL4kXI=
+      MATRIX_HOMESERVER: https://example.invalid
+      MATRIX_SERVER_NAME: example.invalid
+      MATRIX_ADMIN_TOKEN: ci-test-token
+      GLOBAL_ROOM_ID: "!test:example.invalid"
+      SMTP_HOST: localhost
+      SMTP_USER: ci-test
+      SMTP_PASSWORD: ci-test-password
+      ADMIN_EMAIL: ci-test@example.com
+      ADMIN_USERNAME: ci-test-admin
+      ADMIN_PASSWORD_HASH: '$argon2id$v=19$m=65536,t=3,p=4$Po2CjO4YcNaojDD+u9FiTA$hgSkneDmC513CTl7N+Y8tqT+0V1SJGsMyTJAQS0FMe8'
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
