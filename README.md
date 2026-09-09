@@ -25,3 +25,4 @@ For production, use PostgreSQL, HTTPS, CSRF protection, rate limiting, SSO/LDAP/
 openssl rand -hex 32
 python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
 ```
+Deployment test: GitHub Actions
