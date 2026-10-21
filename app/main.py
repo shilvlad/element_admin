@@ -22,6 +22,7 @@ async def lifespan(app):
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
 app.add_middleware(SessionMiddleware, secret_key=settings.secret_key, https_only=settings.app_base_url.startswith("https://"), same_site="lax", max_age=28800)
 templates = Jinja2Templates(directory="app/templates")
+templates.env.globals.update(matrix_homeserver=settings.matrix_homeserver.rstrip("/"), matrix_server_name=settings.matrix_server_name)
 password_hasher = PasswordHasher()
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
