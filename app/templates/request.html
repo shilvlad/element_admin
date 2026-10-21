@@ -26,4 +26,21 @@
 
     <button>Создать заявку</button>
 </form>
+
+<section class="card" style="margin-top:24px;max-width:850px" aria-labelledby="element-x-guide">
+  <h2 id="element-x-guide">Как подключить Element X на Android и iPhone</h2>
+  <p style="color:#94a3b8">После одобрения заявки администратор предоставит логин и пароль для корпоративного мессенджера.</p>
+  <ol style="line-height:1.8;padding-left:22px">
+    <li><strong>Установите Element X:</strong>
+      <a href="https://play.google.com/store/apps/details?id=io.element.android.x" target="_blank" rel="noopener noreferrer">Android (Google Play)</a> или
+      <a href="https://apps.apple.com/app/element-x-secure-chat-call/id1631335820" target="_blank" rel="noopener noreferrer">iPhone (App Store)</a>.
+    </li>
+    <li><strong>Выберите сервер.</strong> Нажмите «Войти», затем «Изменить сервер» / «Change account provider». Введите <code>https://chat.iteko.su</code> (не matrix.org).</li>
+    <li><strong>Войдите.</strong> Укажите выданные администратором логин и пароль. Например, для логина <code>ivanov.i</code> полный Matrix ID — <code>@ivanov.i:chat.iteko.su</code>.</li>
+    <li><strong>Настройте восстановление.</strong> Если Element X предложит Recovery Key, сохраните его в безопасном месте. При входе со второго устройства может потребоваться подтверждение.</li>
+    <li><strong>Разрешите уведомления</strong> в настройках телефона, чтобы получать сообщения вовремя.</li>
+  </ol>
+  <p><a href="https://mobile.element.io/element/?account_provider=chat.iteko.su" target="_blank" rel="noopener noreferrer" style="display:inline-block;border:1px solid #10b981;border-radius:8px;padding:10px 16px;text-decoration:none;font-weight:700">Открыть Element X с нашим сервером ↗</a></p>
+  <p style="font-size:13px;color:#94a3b8">Для входа нужна одобренная заявка. Не создавайте отдельную учётную запись на matrix.org.</p>
+</section>
 {% endblock %}
