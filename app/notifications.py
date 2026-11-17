@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from .config import settings
 from .db import NotificationRoom, PanelSetting, RegistrationRequest, SessionLocal, audit
 from .matrix import MatrixClient, MatrixError
+from .mail import EMAIL_NOTICE_KEY, email_notices_enabled
 
 router = APIRouter()
 SETTING_KEY = "matrix_registration_notifications"
@@ -49,6 +50,7 @@ def settings_page(request, values, error=None, status_code=200, sender=None):
         "request": request, "enabled": values["enabled"],
         "recipients": "\n".join(values["recipients"]), "sender": sender,
         "error": error, "saved": request.query_params.get("saved") == "1",
+        "email_enabled": email_notices_enabled(), "admin_email": settings.admin_email,
     }, status_code=status_code)
 
 
@@ -175,3 +177,16 @@ def notify_registration(rid):
             record_delivery(rid, "-", failed=True)
         except Exception:
             pass
+
+
+@router.post("/settings/email")
+def save_email_settings(request: Request, enabled: bool = Form(False)):
+    from .main import admin_required, actor, client_ip
+    if not admin_required(request):
+        return RedirectResponse("/login", 303)
+    with SessionLocal() as db:
+        db.merge(PanelSetting(key=EMAIL_NOTICE_KEY, value="true" if enabled else "false"))
+        audit(db, actor(request), "EMAIL_NOTIFICATIONS_SETTINGS", "settings", client_ip(request),
+              details=f"enabled={enabled}")
+        db.commit()
+    return RedirectResponse("/settings?saved=1", 303)
