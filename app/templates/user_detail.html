@@ -1,0 +1,11 @@
+{% extends 'base.html' %}{% block content %}
+<h1>{{ user.displayname or user_id }}</h1><p>{{ user_id }}</p>
+<p>Статус: {{ 'Деактивирован' if user.deactivated else 'Активен' }} · Последнее подключение: {{ last_seen }}</p>
+<p>Email: {% for address in user.threepids or [] %}{% if address.medium == 'email' %}{{ address.address }} {% endif %}{% endfor %}</p>
+{% for warning in warnings %}<p class="error">{{ warning }}</p>{% endfor %}
+<h2>Устройства</h2>{% for d in devices %}<article>{{ d.display_name or d.device_id }} — {{ d.device_id }} — {{ d.last_seen_ip or 'IP неизвестен' }} — {{ fmt_time(d.last_seen_ts) }}</article>{% else %}<p>Устройств нет или данные недоступны.</p>{% endfor %}
+<h2>Подключения</h2>{% for device in sessions.values() %}{% for session in device.sessions or [] %}{% for c in session.connections or [] %}<p>{{ c.ip }} — {{ c.user_agent }} — {{ fmt_time(c.last_seen) }}</p>{% endfor %}{% endfor %}{% endfor %}
+<h2>Комнаты</h2>{% for room in rooms %}<p><a href="{{ room_url(room) }}">{{ room }}</a></p>{% else %}<p>Комнат нет или данные недоступны.</p>{% endfor %}
+<h2>Действия администратора (последние 100)</h2>{% for log in logs %}<p>{{ log.ts }} — {{ log.actor }} — {{ log.action }} — {{ log.details }}</p>{% else %}<p>Действий нет.</p>{% endfor %}
+<a href="/users">К пользователям</a>
+{% endblock %}

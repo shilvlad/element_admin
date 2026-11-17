@@ -13,6 +13,7 @@
 
     {% if r.status in ['PENDING','ERROR'] %}
     <form method="post" action="/requests/{{r.id}}/approve">
+<input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
         <label>
             <input type="checkbox" name="is_admin" value="true">
             Администратор
@@ -23,13 +24,22 @@
 
     {% if r.status in ['PENDING','ERROR'] %}
     <form method="post" action="/requests/{{r.id}}/reject">
+<input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
         <input name="reason" placeholder="Причина отказа">
         <button>Отклонить</button>
     </form>
     {% endif %}
     {% if r.status == 'APPROVED' and r.error_message %}
     <form method="post" action="/requests/{{r.id}}/invite">
+<input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
         <button>Повторить приглашение в Global</button>
+    </form>
+    {% endif %}
+    {% if r.status in ['CREATING','CREATED','ERROR','RECOVERING'] %}
+    <form method="post" action="/requests/{{r.id}}/recover">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+        <label><input type="checkbox" name="confirm_existing" value="true">Подтверждаю: найденная учётная запись относится к этой заявке</label>
+        <button>Сверить с Synapse</button>
     </form>
     {% endif %}
 </article>

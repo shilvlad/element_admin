@@ -33,6 +33,17 @@ class RegistrationReservation(Base):
     username: Mapped[str] = mapped_column(String(255), primary_key=True)
     request_id: Mapped[int] = mapped_column(Integer, unique=True)
 
+class RateLimitBucket(Base):
+    __tablename__ = "rate_limit_buckets"
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    hits: Mapped[int] = mapped_column(Integer, default=0)
+    expires_at: Mapped[int] = mapped_column(Integer, index=True)
+
+class RegistrationOperation(Base):
+    __tablename__ = "registration_operations"
+    request_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    started_at: Mapped[int] = mapped_column(Integer)
+
 class AuditLog(Base):
     __tablename__ = "audit_log"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)

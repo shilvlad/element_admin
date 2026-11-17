@@ -5,7 +5,7 @@ from unittest.mock import Mock
 import httpx
 import pytest
 from argon2 import PasswordHasher
-from fastapi.testclient import TestClient
+from conftest import CSRFClient
 
 from app.config import settings
 from app.db import AuditLog, RegistrationRequest, RegistrationReservation, SessionLocal
@@ -102,7 +102,7 @@ def test_approval_passes_chosen_password_clears_secret_and_is_idempotent(client,
     rid = latest().id
     login(client, monkeypatch)
     assert client.post(f"/requests/{rid}/approve", follow_redirects=False).status_code == 303
-    matrix.create_user.assert_called_once_with(f"@tester:{settings.matrix_server_name}", PASSWORD, "Tester", False)
+    matrix.create_user.assert_called_once_with(f"@tester:{settings.matrix_server_name}", PASSWORD, "Tester", False, email="user@example.com")
     assert latest().status == "APPROVED"
     assert latest().password_enc is None
     client.post(f"/requests/{rid}/approve")
@@ -165,13 +165,13 @@ def test_parallel_approval_creates_account_once(client, matrix, monkeypatch):
     cookies = dict(client.cookies)
     entered, release = Event(), Event()
 
-    def create(*args):
+    def create(*args, **kwargs):
         entered.set()
         assert release.wait(5)
 
     matrix.create_user.side_effect = create
     def approve_once():
-        with TestClient(app) as other:
+        with CSRFClient(app) as other:
             other.cookies.update(cookies)
             return other.post(f"/requests/{rid}/approve", follow_redirects=False)
 
@@ -216,7 +216,7 @@ def test_matrix_create_never_updates_known_users(monkeypatch, lookup_status, exp
 
 def test_parallel_submissions_reserve_one_username(client, matrix):
     def send():
-        with TestClient(app) as other:
+        with CSRFClient(app) as other:
             return submit(other).status_code
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(lambda _: send(), range(2)))

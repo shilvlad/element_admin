@@ -1,3 +1,4 @@
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
@@ -20,6 +21,8 @@ class Settings(BaseSettings):
     admin_username: str
     admin_password_hash: str
     enable_diagnostics: bool = True
+    login_attempts: int = Field(default=10, ge=1)
+    registration_attempts: int = Field(default=5, ge=1)
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 settings = Settings()

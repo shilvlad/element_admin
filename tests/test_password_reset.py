@@ -12,7 +12,7 @@ from app.db import AuditLog, SessionLocal
 @pytest.fixture
 def admin(client, monkeypatch):
     monkeypatch.setattr(settings, 'admin_password_hash', PasswordHasher().hash('admin-test'))
-    client.post('/login', data={'username': settings.admin_username, 'password': 'admin-test'})
+    client.post('/login', data={'username': settings.admin_username, 'password': 'admin-test'}, follow_redirects=False)
     return client
 
 
@@ -30,11 +30,11 @@ def synapse(monkeypatch):
 
 def test_reset_from_rendered_button(admin, synapse):
     response = admin.get('/users')
-    action = re.search(r'action="([^"]+)"\s*>\s*<button[^>]*>Сбросить пароль', response.text).group(1)
+    action = next(action for action, body in re.findall(r'<form[^>]+action="([^"]+)"[^>]*>(.*?)</form>', response.text, re.S) if 'Сбросить пароль' in body)
     response = admin.post(unescape(action))
     assert response.status_code == 200
     assert response.headers['cache-control'] == 'no-store'
-    method, url, kwargs = synapse[-1]
+    method, url, kwargs = next(call for call in synapse if call[0] == 'POST')
     assert method == 'POST'
     assert url.endswith('/_synapse/admin/v1/reset_password/%40tester%3Aexample.invalid')
     password = kwargs['json']['new_password']
@@ -50,7 +50,7 @@ def test_reset_from_rendered_button(admin, synapse):
 
 def test_old_button_url_still_works(admin, synapse):
     assert admin.post('/users/@tester:example.invalid/reset_password').status_code == 200
-    assert synapse[-1][0] == 'POST'
+    assert any(call[0] == 'POST' for call in synapse)
 
 
 @pytest.mark.parametrize('suffix', ['password', 'reset_password'])

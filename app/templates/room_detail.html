@@ -1,0 +1,7 @@
+{% extends 'base.html' %}{% block content %}
+<h1>{{ room.name or room_id }}</h1><p>{{ room_id }}</p><p>{{ room.topic or '' }}</p>
+<p>Шифрование: {{ 'включено' if room.encryption else 'выключено' }}</p>
+<h2>Участники: {{ members|length }}</h2>{% for member in members %}<p><a href="{{ user_url(member) }}">{{ member }}</a></p>{% else %}<p>Участников нет.</p>{% endfor %}
+<h2>Приглашение</h2><form method="post" action="{{ room_url(room_id) }}/invite"><input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}"><input name="user_id" placeholder="@user:server" required><button>Пригласить</button></form>
+<p><a href="{{ room_url(room_id) }}/media">Медиа и объём файлов</a></p><a href="/rooms">К комнатам</a>
+{% endblock %}
