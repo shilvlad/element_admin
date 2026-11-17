@@ -14,8 +14,9 @@ class Settings(BaseSettings):
     matrix_timeout: float = 10.0
     smtp_host: str
     smtp_port: int = 587
-    smtp_user: str
-    smtp_password: str
+    smtp_from: str = ""
+    smtp_user: str = ""
+    smtp_password: str = ""
     smtp_starttls: bool = True
     admin_email: str
     admin_username: str
