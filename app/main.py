@@ -1,3 +1,4 @@
+from .build import build_info
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
 import time
@@ -19,7 +20,6 @@ from .guards import csrf_token, protect_forms
 from .admin_views import router, fmt_time, user_url
 from .recovery import router as recovery_router
 from .notifications import router as settings_router, notify_registration
-from .build import build_info
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 
