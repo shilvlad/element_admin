@@ -47,6 +47,13 @@ jobs:
       - name: Run tests
         run: pytest -q
 
+      - name: Build and verify image
+        env:
+          BUILD_COMMIT: ${{ github.sha }}
+        run: |
+          docker build --build-arg BUILD_COMMIT="$BUILD_COMMIT" --build-arg BUILD_DATE=ci -t element-admin-ci .
+          docker run --rm --entrypoint python -e EXPECTED_COMMIT="$BUILD_COMMIT" element-admin-ci -c 'import os; from app.build import build_info; info = build_info(); assert info["commit"] == os.environ["EXPECTED_COMMIT"]; assert info["built_at"] == "ci"'
+
   deploy:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
     needs: test
