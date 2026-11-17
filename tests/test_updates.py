@@ -13,7 +13,7 @@ def source(monkeypatch):
     updates._cache.clear()
     get = Mock(return_value=httpx.Response(200, request=httpx.Request('GET', updates.RELEASE_API),
                                          json={'tag_name': 'v1.100.0', 'prerelease': False, 'draft': False}))
-    monkeypatch.setattr(updates.httpx, 'get', get)
+    monkeypatch.setattr(updates, 'fetch_release', get)
     matrix = Mock()
     matrix.server_version.return_value = '1.99.0'
     monkeypatch.setattr(updates, 'MatrixClient', lambda: matrix)
@@ -37,7 +37,6 @@ def test_cache_expires_and_does_not_cache_installed_version(source, monkeypatch)
     source[1].server_version.return_value = '1.100.0'
     assert updates.synapse_update_status()['update_available'] is False
     source[0].assert_called_once()
-    assert 'Authorization' not in source[0].call_args.kwargs['headers']
     clock.return_value = 3701
     updates.synapse_update_status()
     assert source[0].call_count == 2
@@ -99,3 +98,30 @@ def test_server_version_endpoint(monkeypatch):
     monkeypatch.setattr('httpx.request', request)
     assert MatrixClient().server_version() == '1.99.0'
     assert request.call_args.args[1].endswith('/_synapse/admin/v1/server_version')
+
+
+def test_release_transport_is_direct_ipv4_and_has_no_matrix_credentials(monkeypatch):
+    from unittest.mock import MagicMock
+    client = MagicMock()
+    transport = Mock()
+    monkeypatch.setattr(updates.httpx, 'Client', client)
+    monkeypatch.setattr(updates.httpx, 'HTTPTransport', transport)
+    updates.fetch_release()
+    transport.assert_called_once_with(local_address="0.0.0.0", retries=1)
+    client.assert_called_once_with(transport=transport.return_value, timeout=10.0, trust_env=False)
+    request = client.return_value.__enter__.return_value.get
+    assert request.call_args.args == (updates.RELEASE_API,)
+    assert 'Authorization' not in request.call_args.kwargs['headers']
+
+
+@pytest.mark.parametrize('error,reason', [
+    (httpx.ConnectTimeout('secret'), 'время ожидания'),
+    (httpx.ConnectError('secret'), 'подключиться'),
+    (ValueError('secret'), 'некорректные данные'),
+])
+def test_release_failure_reports_safe_reason(source, error, reason):
+    source[0].side_effect = error
+    result = updates.synapse_update_status()
+    assert reason in result['release_error_reason']
+    assert 'secret' not in str(result)
+    assert result['update_available'] is None
