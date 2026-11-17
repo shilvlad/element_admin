@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from fastapi import FastAPI, Request, Form
+from fastapi import FastAPI, Request, Form, Query
+from typing import Literal
 from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -214,11 +215,26 @@ def reject(request: Request, rid: int, reason: str = Form("")):
     return RedirectResponse("/requests",303)
 
 @app.get("/users")
-def users_page(request: Request, q: str = ""):
+def users_page(request: Request, q: str = "", status: Literal["active", "deactivated", "all"] = "active",
+               page: int = Query(1, ge=1)):
     if not admin_required(request): return login_redirect()
-    data=MatrixClient().list_users(1000).get("users",[])
-    if q: data=[u for u in data if q.lower() in str(u).lower()]
-    return templates.TemplateResponse("users.html", {"request": request, "users": data, "q": q})
+    try:
+        data = MatrixClient().list_users(include_deactivated=status != "active").get("users", [])
+    except MatrixError:
+        return templates.TemplateResponse("users.html", {"request": request, "users": [], "q": q,
+            "status": status, "page": 1, "pages": 1, "total": 0,
+            "error": "Не удалось получить пользователей из Synapse. Попробуйте позже."}, status_code=502)
+    if status != "all":
+        data = [u for u in data if bool(u.get("deactivated")) == (status == "deactivated")]
+    if q.strip():
+        query = q.strip().casefold()
+        data = [u for u in data if query in u.get("name", "").casefold()
+                or query in (u.get("displayname") or "").casefold()]
+    total = len(data)
+    pages = max(1, (total + 49) // 50)
+    page = min(page, pages)
+    return templates.TemplateResponse("users.html", {"request": request, "users": data[(page-1)*50:page*50],
+        "q": q, "status": status, "page": page, "pages": pages, "total": total})
 
 @app.post("/users/{user_id:path}/password")
 def reset_password(request: Request, user_id: str):
@@ -241,10 +257,11 @@ def deactivate(request: Request,user_id:str):
 @app.post("/users/{user_id:path}/activate")
 def activate(request: Request,user_id:str):
     if not admin_required(request): return login_redirect()
-    try: MatrixClient().update_user(user_id,deactivated=False); action="ACTIVATE"
-    except Exception as e: return templates.TemplateResponse("result.html", {"request":request,"message":str(e)},status_code=502)
+    password = generate_password()
+    try: MatrixClient().update_user(user_id, deactivated=False, password=password); action="ACTIVATE"
+    except MatrixError: return templates.TemplateResponse("result.html", {"request": request, "message": "Не удалось активировать учётную запись. Проверьте её статус в Synapse перед повтором."}, status_code=502)
     with SessionLocal() as db: audit(db,actor(request),action,user_id,client_ip(request)); db.commit()
-    return RedirectResponse("/users",303)
+    return templates.TemplateResponse("result.html", {"request": request, "message": f"Учётная запись {user_id} активирована. Передайте пользователю новый пароль.", "secret": password}, headers={"Cache-Control": "no-store"})
 
 @app.get("/audit")
 def audit_page(request: Request):
