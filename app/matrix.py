@@ -3,7 +3,9 @@ import httpx
 from .config import settings
 
 class MatrixError(RuntimeError):
-    pass
+    def __init__(self, message, status_code=None):
+        super().__init__(message)
+        self.status_code = status_code
 
 class MatrixClient:
     def __init__(self):
@@ -19,7 +21,7 @@ class MatrixClient:
         if r.status_code >= 400:
             try: body = r.json()
             except Exception: body = r.text[:500]
-            raise MatrixError(f"HTTP {r.status_code}: {body}")
+            raise MatrixError(f"HTTP {r.status_code}: {body}", r.status_code)
         return r
 
     def health(self):
@@ -37,35 +39,25 @@ class MatrixClient:
     def list_users(self, limit=1000):
         return self._request("GET", f"/_synapse/admin/v2/users?limit={limit}").json()
 
-    def create_user(self, user_id, password, displayname="", admin=False):
+    def user_exists(self, user_id):
         try:
-            payload = {
-                "password": password,
-                "displayname": displayname,
-                "admin": admin,
-                "deactivated": False
-            }
-            self._request("PUT", f"/_synapse/admin/v2/users/{quote(user_id, safe='')}", json=payload)
+            self.get_user(user_id)
+            return True
+        except MatrixError as exc:
+            if exc.status_code == 404:
+                return False
+            raise
 
-            # Приглашаем нового пользователя в глобальную комнату
-            # Если администратор не является участником комнаты, нужно использовать сервисного бота
-            inviter_user_id = f"@{settings.admin_username}:{settings.matrix_server_name}"
-
-            # Проверяем, что пользователь создан
-            user_data = self.get_user(user_id)
-            if user_data.get("name") == user_id:
-                # Добавляем задержку, чтобы пользователь успел создаться
-                import time
-                time.sleep(1)
-
-                # Отправляем приглашение
-                self.invite_to_room(settings.global_room_id, user_id, inviter_user_id)
-
-        except Exception as e:
-            # Логируем ошибку, но не прерываем создание пользователя
-            print(f"Warning: Could not invite user {user_id} to global room: {e}")
-            # Можно также перевыбросить исключение, если это критично
-            raise MatrixError(f"Failed to create user and invite to room: {e}")
+    def create_user(self, user_id, password, displayname="", admin=False):
+        # Synapse's PUT also updates users. Never call it for a known account.
+        if self.user_exists(user_id):
+            raise MatrixError("Логин уже занят. Существующая учётная запись не изменена.")
+        self._request("PUT", f"/_synapse/admin/v2/users/{quote(user_id, safe='')}", json={
+            "password": password,
+            "displayname": displayname,
+            "admin": admin,
+            "deactivated": False,
+        })
 
     def update_user(self, user_id, **payload):
         self._request("PUT", f"/_synapse/admin/v2/users/{quote(user_id, safe='')}", json=payload)

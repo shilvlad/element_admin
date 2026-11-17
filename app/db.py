@@ -27,6 +27,12 @@ class RegistrationRequest(Base):
     reject_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+class RegistrationReservation(Base):
+    """Serialize registration of each local username, including legacy requests."""
+    __tablename__ = "registration_reservations"
+    username: Mapped[str] = mapped_column(String(255), primary_key=True)
+    request_id: Mapped[int] = mapped_column(Integer, unique=True)
+
 class AuditLog(Base):
     __tablename__ = "audit_log"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
