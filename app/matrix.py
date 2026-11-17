@@ -61,16 +61,14 @@ class MatrixClient:
                 return False
             raise
 
-    def create_user(self, user_id, password, displayname="", admin=False):
+    def create_user(self, user_id, password, displayname="", admin=False, email=None):
         # Synapse's PUT also updates users. Never call it for a known account.
         if self.user_exists(user_id):
             raise MatrixError("Логин уже занят. Существующая учётная запись не изменена.")
-        self._request("PUT", f"/_synapse/admin/v2/users/{quote(user_id, safe='')}", json={
-            "password": password,
-            "displayname": displayname,
-            "admin": admin,
-            "deactivated": False,
-        })
+        payload = {"password": password, "displayname": displayname, "admin": admin, "deactivated": False}
+        if email:
+            payload["threepids"] = [{"medium": "email", "address": email}]
+        self._request("PUT", f"/_synapse/admin/v2/users/{quote(user_id, safe='')}", json=payload)
 
     def reset_password(self, user_id, password):
         self._request("POST", f"/_synapse/admin/v1/reset_password/{quote(user_id, safe='')}",
@@ -97,3 +95,28 @@ class MatrixClient:
         # Admin API does not expose a generic "room exists" check with this token.
         # A real client token is required for membership/invite operations.
         return {"room_id": settings.global_room_id, "note": "membership check requires client-capable token"}
+
+    def user_devices(self, user_id):
+        return self._request("GET", f"/_synapse/admin/v2/users/{quote(user_id, safe='')}/devices").json()
+
+    def user_rooms(self, user_id):
+        return self._request("GET", f"/_synapse/admin/v1/users/{quote(user_id, safe='')}/joined_rooms").json()
+
+    def user_sessions(self, user_id):
+        return self._request("GET", f"/_synapse/admin/v1/whois/{quote(user_id, safe='')}").json()
+
+    def list_rooms(self, offset="0", search=""):
+        return self._request("GET", "/_synapse/admin/v1/rooms", params={
+            "from": offset, "limit": 50, "search_term": search}).json()
+
+    def get_room(self, room_id):
+        return self._request("GET", f"/_synapse/admin/v1/rooms/{quote(room_id, safe='')}").json()
+
+    def room_members(self, room_id):
+        return self._request("GET", f"/_synapse/admin/v1/rooms/{quote(room_id, safe='')}/members").json()
+
+    def room_media(self, room_id):
+        return self._request("GET", f"/_synapse/admin/v1/room/{quote(room_id, safe='')}/media").json()
+
+    def media_info(self, origin, media_id):
+        return self._request("GET", f"/_synapse/admin/v1/media/{quote(origin, safe='')}/{quote(media_id, safe='')}").json()

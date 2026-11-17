@@ -25,7 +25,7 @@
 <div class="user-row">
 
     <div class="user-info">
-        <div class="user-name">{{ u.name }}</div>
+        <div class="user-name"><a href="{{ user_url(u.name) }}">{{ u.name }}</a></div>
 
         <div class="user-meta">
             <span>{{ u.displayname or "Без отображаемого имени" }}</span>
@@ -45,14 +45,17 @@
     <div class="user-actions">
         {% if not u.deactivated %}
         <form method="post" action="/users/{{ u.name }}/password">
+<input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
             <button type="submit">Сбросить пароль</button>
         </form>
 
         <form method="post" action="/users/{{ u.name }}/deactivate">
+<input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
             <button type="submit" class="danger">Деактивировать</button>
         </form>
         {% else %}
         <form method="post" action="/users/{{ u.name }}/activate">
+<input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
             <button type="submit">Активировать</button>
         </form>
         {% endif %}

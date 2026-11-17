@@ -9,6 +9,7 @@ from app.main import app
 
 
 def test_admin_login_success(client, monkeypatch):
+    monkeypatch.setattr("app.main.MatrixClient.list_users", lambda *args, **kwargs: {"users": []})
     password = "test-password"
     password_hash = PasswordHasher().hash(password)
 

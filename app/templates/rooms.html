@@ -1,0 +1,7 @@
+{% extends 'base.html' %}{% block content %}
+<h1>Комнаты</h1><form method="get"><input name="q" value="{{ q }}" placeholder="Название, ID или alias"><button>Найти</button></form>
+<p>Найдено: {{ data.total_rooms }}</p>
+{% for room in data.rooms %}<article><a href="{{ room_url(room.room_id) }}">{{ room.name or room.room_id }}</a> — Участники: {{ room.joined_members }}<p>{{ room.room_id }}</p></article>{% else %}<p>Комнаты не найдены.</p>{% endfor %}
+{% if data.prev_batch is defined %}<a href="{{ request.url.include_query_params(offset=data.prev_batch) }}">Назад</a>{% endif %}
+{% if data.next_batch is defined %}<a href="{{ request.url.include_query_params(offset=data.next_batch) }}">Далее</a>{% endif %}
+{% endblock %}

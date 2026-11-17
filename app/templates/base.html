@@ -3,9 +3,10 @@
     {% if request.session.get('admin') %}
         <a href="/requests">Заявки</a>
         <a href="/users">Пользователи</a>
+        <a href="/rooms">Комнаты</a>
         <a href="/audit">Аудит</a>
         <a href="/diagnostics">Состояние</a>
-        <a href="/logout">Выход</a>
+        <form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}"><button>Выход</button></form>
     {% else %}
         <a href="/request">Создать пользователя</a>
     {% endif %}

@@ -1,1 +1,10 @@
-{% extends 'base.html' %}{% block content %}<h1>Synapse User Manager</h1><p>Ожидают модерации: <b>{{pending}}</b></p><p>Управляемых пользователей: <b>{{users}}</b></p>{% endblock %}
+{% extends 'base.html' %}{% block content %}
+<h1>Сводка</h1>
+<p>Synapse Admin API: {% if available %}доступен{% else %}<span class="error">недоступен</span>{% endif %}</p>
+<div class="card"><h2>Пользователи</h2>
+<p>Всего: {{ total if total is not none else 'Нет данных' }} · Активные: {{ active if active is not none else 'Нет данных' }} · Деактивированные: {{ deactivated if deactivated is not none else 'Нет данных' }}</p>
+<p>Подключались за 24 часа: {{ seen if seen is not none else 'Synapse не передаёт время активности' }}</p></div>
+<div class="card"><h2>Заявки</h2><p>Ожидают: {{ statuses.get('PENDING', 0) }} · Ошибки: {{ statuses.get('ERROR', 0) }} · Создаются: {{ statuses.get('CREATING', 0) }} · Созданы, не завершены: {{ statuses.get('CREATED', 0) }} · Восстанавливаются: {{ statuses.get('RECOVERING', 0) }}</p><a href="/requests">Открыть заявки</a></div>
+<p>Ошибки операций панели за 24 часа: {{ errors }}</p>
+<h2>Последние действия</h2>{% for log in recent %}<p>{{ log.ts }} — {{ log.actor }} — {{ log.action }} — {{ log.target }}</p>{% else %}<p>Действий пока нет.</p>{% endfor %}
+{% endblock %}

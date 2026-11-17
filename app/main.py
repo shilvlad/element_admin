@@ -1,18 +1,23 @@
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
-from fastapi import FastAPI, Request, Form, Query
+from datetime import datetime, timezone, timedelta
+import time
+from email_validator import validate_email, EmailNotValidError
+from fastapi import FastAPI, Request, Form, Query, Depends
 from typing import Literal
 from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
-from sqlalchemy import select, desc, update, delete
+from sqlalchemy import select, desc, update, delete, func
 from sqlalchemy.exc import IntegrityError
 from .config import settings
-from .db import SessionLocal, init_db, RegistrationRequest, RegistrationReservation, ManagedUser, AuditLog, audit
+from .db import SessionLocal, init_db, RegistrationRequest, RegistrationReservation, RegistrationOperation, ManagedUser, AuditLog, audit
 from .security import encrypt_secret, decrypt_secret, generate_password
 from .matrix import MatrixClient, MatrixError
-from .mail import send_moderation_notice
+from .mail import send_moderation_notice, send_password_notice
+from .guards import csrf_token, protect_forms
+from .admin_views import router, fmt_time, user_url
+from .recovery import router as recovery_router
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 
@@ -22,10 +27,14 @@ async def lifespan(app):
     init_db()
     yield
 
-app = FastAPI(title=settings.app_name, lifespan=lifespan)
+app = FastAPI(title=settings.app_name, lifespan=lifespan, dependencies=[Depends(protect_forms)])
 app.add_middleware(SessionMiddleware, secret_key=settings.secret_key, https_only=settings.app_base_url.startswith("https://"), same_site="lax", max_age=28800)
 templates = Jinja2Templates(directory="app/templates")
 templates.env.globals.update(matrix_homeserver=settings.matrix_homeserver.rstrip("/"), matrix_server_name=settings.matrix_server_name)
+templates.env.globals["csrf_token"] = csrf_token
+templates.env.globals.update(fmt_time=fmt_time, user_url=user_url)
+app.include_router(router)
+app.include_router(recovery_router)
 password_hasher = PasswordHasher()
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
@@ -44,6 +53,7 @@ def login(request: Request, username: str = Form(...), password: str = Form(...)
     if username == settings.admin_username:
         try:
             password_hasher.verify(settings.admin_password_hash, password)
+            request.session.clear()
             request.session.update({"admin": True, "username": username})
             return RedirectResponse("/", status_code=303)
         except VerifyMismatchError:
@@ -55,16 +65,32 @@ def login(request: Request, username: str = Form(...), password: str = Form(...)
         status_code=401,
     )
 
-@app.get("/logout")
+@app.post("/logout")
 def logout(request: Request): request.session.clear(); return RedirectResponse("/login", status_code=303)
 
 @app.get("/")
 def dashboard(request: Request):
     if not admin_required(request): return login_redirect()
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
     with SessionLocal() as db:
-        pending = db.scalar(select(RegistrationRequest).where(RegistrationRequest.status == "PENDING").count()) if False else len(db.scalars(select(RegistrationRequest).where(RegistrationRequest.status == "PENDING")).all())
-        users = len(db.scalars(select(ManagedUser)).all())
-    return templates.TemplateResponse("dashboard.html", {"request": request, "pending": pending, "users": users})
+        statuses = dict(db.execute(select(RegistrationRequest.status, func.count()).group_by(RegistrationRequest.status)).all())
+        errors = db.scalar(select(func.count()).select_from(AuditLog).where(
+            AuditLog.ts >= cutoff, AuditLog.action.like("%ERROR")))
+        recent = db.scalars(select(AuditLog).order_by(desc(AuditLog.ts)).limit(10)).all()
+    available = False
+    total = active = deactivated = seen = None
+    try:
+        users = MatrixClient().list_users(include_deactivated=True).get("users", [])
+        available = True
+        total = len(users)
+        deactivated = sum(bool(u.get("deactivated")) for u in users)
+        active = total - deactivated
+        if any("last_seen_ts" in u for u in users):
+            seen = sum((u.get("last_seen_ts") or 0) >= cutoff.timestamp()*1000 for u in users)
+    except MatrixError:
+        pass
+    return templates.TemplateResponse("dashboard.html", dict(request=request, statuses=statuses, errors=errors,
+        recent=recent, available=available, total=total, active=active, deactivated=deactivated, seen=seen))
 
 @app.get("/request")
 def request_page(request: Request): return templates.TemplateResponse("request.html", {"request": request})
@@ -85,6 +111,10 @@ def create_request(request: Request, username: str = Form(...), displayname: str
         return invalid("Пароль должен содержать от 8 до 128 символов")
     if not requester.strip() or len(requester) > 255 or len(displayname) > 255:
         return invalid("Укажите контакт заявителя; поля имени и контакта — не более 255 символов")
+    try:
+        requester = validate_email(requester.strip(), check_deliverability=False).normalized
+    except EmailNotValidError:
+        return invalid("Укажите корректный email заявителя")
     uid = f"@{username}:{settings.matrix_server_name}"
     try:
         if MatrixClient().user_exists(uid):
@@ -141,6 +171,12 @@ def approve(request: Request, rid: int, is_admin: bool = Form(False)):
                 RegistrationRequest.id == rid,
                 RegistrationRequest.status.in_(("PENDING", "ERROR"))
             ).values(status="CREATING", error_message=None), execution_options={"synchronize_session": False})
+            if claimed.rowcount == 1:
+                operation = db.get(RegistrationOperation, rid)
+                if operation:
+                    operation.started_at = int(time.time())
+                else:
+                    db.add(RegistrationOperation(request_id=rid, started_at=int(time.time())))
             db.commit()
         except IntegrityError:
             db.rollback()
@@ -152,7 +188,14 @@ def approve(request: Request, rid: int, is_admin: bool = Form(False)):
         m = MatrixClient()
         try:
             password = decrypt_secret(req.password_enc)
-            m.create_user(uid, password, req.displayname, is_admin)
+            try:
+                email = validate_email(req.requester, check_deliverability=False).normalized
+            except EmailNotValidError:
+                email = None  # Legacy applications may contain a name instead of email.
+            if email:
+                m.create_user(uid, password, req.displayname, is_admin, email=email)
+            else:
+                m.create_user(uid, password, req.displayname, is_admin)
         except Exception:
             # Do not save upstream error bodies: they may contain credentials.
             req.status = "ERROR"
@@ -236,13 +279,48 @@ def users_page(request: Request, q: str = "", status: Literal["active", "deactiv
     return templates.TemplateResponse("users.html", {"request": request, "users": data[(page-1)*50:page*50],
         "q": q, "status": status, "page": page, "pages": pages, "total": total})
 
+def password_result(request, matrix, user_id, password, message):
+    address = None
+    profile_failed = False
+    try:
+        profile = matrix.get_user(user_id)
+        threepids = profile.get("threepids", [])
+        if isinstance(threepids, list):
+            for item in threepids:
+                if item.get("medium") == "email":
+                    try:
+                        address = validate_email(item.get("address", ""), check_deliverability=False).normalized
+                        break
+                    except EmailNotValidError:
+                        continue
+    except MatrixError:
+        profile_failed = True
+    delivered = False
+    if address:
+        try:
+            send_password_notice(address, user_id, password)
+            delivered = True
+            message += f" Новый пароль отправлен на {address}."
+        except Exception:
+            message += " Письмо не отправлено. Передайте пароль пользователю вручную."
+    else:
+        message += " Email недоступен. Передайте пароль пользователю вручную." if profile_failed else " Email не указан. Передайте пароль пользователю вручную."
+    if address:
+        with SessionLocal() as db:
+            audit(db, actor(request), "PASSWORD_EMAIL_SENT" if delivered else "PASSWORD_EMAIL_ERROR", user_id, client_ip(request))
+            db.commit()
+    return templates.TemplateResponse("result.html", {"request": request, "message": message,
+        "secret": None if delivered else password}, headers={"Cache-Control": "no-store"})
+
+
 @app.post("/users/{user_id:path}/reset_password", include_in_schema=False)
 @app.post("/users/{user_id:path}/password")
 def reset_password(request: Request, user_id: str):
     if not admin_required(request): return login_redirect()
     password = generate_password()
     try:
-        MatrixClient().reset_password(user_id, password)
+        matrix = MatrixClient()
+        matrix.reset_password(user_id, password)
     except MatrixError as exc:
         message = {
             403: "Synapse отказал в доступе. Проверьте права административного токена.",
@@ -254,10 +332,7 @@ def reset_password(request: Request, user_id: str):
     with SessionLocal() as db:
         audit(db, actor(request), "RESET_PASSWORD", user_id, client_ip(request))
         db.commit()
-    return templates.TemplateResponse("result.html", {
-        "request": request, "message": f"Пароль сброшен для {user_id}. Передайте пользователю новый пароль.",
-        "secret": password,
-    }, headers={"Cache-Control": "no-store"})
+    return password_result(request, matrix, user_id, password, f"Пароль сброшен для {user_id}.")
 
 @app.post("/users/{user_id:path}/deactivate")
 def deactivate(request: Request,user_id:str):
@@ -271,10 +346,13 @@ def deactivate(request: Request,user_id:str):
 def activate(request: Request,user_id:str):
     if not admin_required(request): return login_redirect()
     password = generate_password()
-    try: MatrixClient().update_user(user_id, deactivated=False, password=password); action="ACTIVATE"
+    try:
+        matrix = MatrixClient()
+        matrix.update_user(user_id, deactivated=False, password=password)
+        action="ACTIVATE"
     except MatrixError: return templates.TemplateResponse("result.html", {"request": request, "message": "Не удалось активировать учётную запись. Проверьте её статус в Synapse перед повтором."}, status_code=502)
     with SessionLocal() as db: audit(db,actor(request),action,user_id,client_ip(request)); db.commit()
-    return templates.TemplateResponse("result.html", {"request": request, "message": f"Учётная запись {user_id} активирована. Передайте пользователю новый пароль.", "secret": password}, headers={"Cache-Control": "no-store"})
+    return password_result(request, matrix, user_id, password, f"Учётная запись {user_id} активирована.")
 
 @app.get("/audit")
 def audit_page(request: Request):

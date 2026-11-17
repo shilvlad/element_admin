@@ -9,6 +9,7 @@
 {% endif %}
 
 <form method="post">
+<input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
     <label>
         Username
         <input name="username" placeholder="ivanov.i" required>
@@ -20,8 +21,8 @@
     </label>
 
     <label>
-        Email/ФИО заявителя
-        <input name="requester" required>
+        Email заявителя
+        <input type="email" name="requester" autocomplete="email" maxlength="255" required>
     </label>
 
     <label>

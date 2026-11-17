@@ -1,0 +1,10 @@
+{% extends 'base.html' %}{% block content %}
+<h1>Медиа комнаты {{ room_id }}</h1>
+<p>Известных файлов: {{ total }}. Объём доступных файлов на этой странице: {{ size }} байт (размер известен для {{ known }} из {{ rows|length }}).</p>
+<p>Показаны ссылки из незашифрованных событий. Вложения из зашифрованных сообщений и удалённые из кэша файлы могут отсутствовать; это не полный размер хранилища комнаты.</p>
+{% for row in rows %}<p>{{ row.uri }} — {{ row.size if row.size is not none else 'Размер недоступен' }}{% if row.size is not none %} байт{% endif %}</p>{% endfor %}
+<p>Страница {{ page }} из {{ pages }}</p>
+{% if page > 1 %}<a href="{{ request.url.include_query_params(page=page-1) }}">Назад</a>{% endif %}
+{% if page < pages %}<a href="{{ request.url.include_query_params(page=page+1) }}">Далее</a>{% endif %}
+<p><a href="{{ room_url(room_id) }}">К комнате</a></p>
+{% endblock %}

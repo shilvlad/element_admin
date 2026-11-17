@@ -12,7 +12,7 @@ from app.matrix import MatrixClient, MatrixError
 @pytest.fixture
 def admin(client, monkeypatch):
     monkeypatch.setattr(settings, 'admin_password_hash', PasswordHasher().hash('admin-test'))
-    client.post('/login', data={'username': settings.admin_username, 'password': 'admin-test'})
+    client.post('/login', data={'username': settings.admin_username, 'password': 'admin-test'}, follow_redirects=False)
     return client
 
 

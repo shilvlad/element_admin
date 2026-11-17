@@ -1,4 +1,5 @@
 import smtplib
+import ssl
 from email.message import EmailMessage
 from html import escape
 from .config import settings
@@ -13,6 +14,21 @@ def send_moderation_notice(request_id, username, requester):
     html = f"<p>Новая заявка <b>#{request_id}</b></p><p>Пользователь: <b>{escape(username)}</b><br>Заявитель: {escape(requester)}</p><p><a href='{escape(link)}'>Открыть модерацию</a></p>"
     msg.add_alternative(html, subtype="html")
     with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=15) as s:
-        if settings.smtp_starttls: s.starttls()
+        if settings.smtp_starttls: s.starttls(context=ssl.create_default_context())
         if settings.smtp_user: s.login(settings.smtp_user, settings.smtp_password)
         s.send_message(msg)
+
+
+def send_password_notice(address, user_id, password):
+    msg = EmailMessage()
+    msg['Subject'] = 'Новый пароль Matrix'
+    msg['From'] = settings.smtp_user
+    msg['To'] = address
+    msg.set_content(f'Учётная запись: {user_id}\nНовый пароль: {password}\n'
+                    f'Сервер: {settings.matrix_homeserver}\nСмените пароль после входа.')
+    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=15) as smtp:
+        if settings.smtp_starttls:
+            smtp.starttls(context=ssl.create_default_context())
+        if settings.smtp_user:
+            smtp.login(settings.smtp_user, settings.smtp_password)
+        smtp.send_message(msg)
