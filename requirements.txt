@@ -11,3 +11,4 @@ argon2-cffi==25.1.0
 pytest==9.1.1
 
 email-validator==2.3.0
+packaging==26.3
