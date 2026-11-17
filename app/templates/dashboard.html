@@ -15,7 +15,7 @@
 <section class="card"><h2>Обновления Synapse</h2>
 <p>Установлено: <b>{{ synapse_update.current or 'Не удалось определить' }}</b></p>
 <p>Последний стабильный релиз: <b>{{ synapse_update.latest or 'Нет данных' }}</b></p>
-{% if synapse_update.release_error %}<p>Не удалось проверить обновления. Повторная проверка через 5 минут; сохранённые данные могут быть устаревшими.</p>
+{% if synapse_update.release_error %}<p>Не удалось проверить обновления. {{ synapse_update.release_error_reason or '' }} Повторная проверка через 5 минут; сохранённые данные могут быть устаревшими.</p>
 {% elif synapse_update.update_available == true %}<p><span class="badge pending">Доступна новая версия Synapse</span></p>
 {% elif synapse_update.update_available == false %}<p class="quiet">Более новая стабильная версия не найдена.</p>{% endif %}
 {% if synapse_update.version_error %}<p>Не удалось получить установленную версию Synapse.</p>{% endif %}

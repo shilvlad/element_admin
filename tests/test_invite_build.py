@@ -82,7 +82,7 @@ def test_build_page_and_badge_are_admin_only(client, monkeypatch):
     assert "abcdef0123456789" in response.text
     assert "abcdef01" in response.text
     assert "2026-11-18T00:00:00Z" in response.text
-    assert "Светлая админка" in response.text
+    assert "проверка релизов Synapse" in response.text
 
 
 def test_unknown_build_is_honest(client, monkeypatch):
