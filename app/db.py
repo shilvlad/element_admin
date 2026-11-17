@@ -63,6 +63,17 @@ class ManagedUser(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
+class PanelSetting(Base):
+    __tablename__ = "panel_settings"
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    value: Mapped[str] = mapped_column(Text)
+
+class NotificationRoom(Base):
+    __tablename__ = "notification_rooms"
+    sender: Mapped[str] = mapped_column(String(255), primary_key=True)
+    recipient: Mapped[str] = mapped_column(String(255), primary_key=True)
+    room_id: Mapped[str] = mapped_column(String(255))
+
 def init_db(): Base.metadata.create_all(bind=engine)
 
 def audit(db, actor, action, target, ip="-", details=""):

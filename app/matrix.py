@@ -24,6 +24,20 @@ class MatrixClient:
             raise MatrixError(f"HTTP {r.status_code}: {body}", r.status_code)
         return r
 
+    def whoami(self):
+        return self._request("GET", "/_matrix/client/v3/account/whoami").json()["user_id"]
+
+    def create_notification_room(self, recipient):
+        return self._request("POST", "/_matrix/client/v3/createRoom", json={
+            "preset": "private_chat", "is_direct": True, "invite": [recipient],
+            "name": "Заявки element-admin",
+            "power_level_content_override": {"invite": 100, "state_default": 100},
+        }).json()["room_id"]
+
+    def send_notification(self, room_id, transaction_id, body):
+        return self._request("PUT", f"/_matrix/client/v3/rooms/{quote(room_id, safe='')}/send/m.room.message/{quote(transaction_id, safe='')}",
+                             json={"msgtype": "m.text", "body": body}).json()
+
     def health(self):
         r = httpx.get(self.base + "/_matrix/client/versions", timeout=self.timeout)
         r.raise_for_status()

@@ -4,7 +4,7 @@
 <h1>Заявки</h1>
 
 {% for r in rows %}
-<article>
+<article id="request-{{r.id}}">
     <b>#{{r.id}}</b> {{r.username}} — {{r.status}} — {{r.requester}}
 
     {% if r.error_message %}
