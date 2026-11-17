@@ -106,8 +106,10 @@ class MatrixClient:
         return self._request("GET", f"/_synapse/admin/v1/whois/{quote(user_id, safe='')}").json()
 
     def list_rooms(self, offset="0", search=""):
-        return self._request("GET", "/_synapse/admin/v1/rooms", params={
-            "from": offset, "limit": 50, "search_term": search}).json()
+        params = {"from": offset, "limit": 50}
+        if search.strip():
+            params["search_term"] = search.strip()
+        return self._request("GET", "/_synapse/admin/v1/rooms", params=params).json()
 
     def get_room(self, room_id):
         return self._request("GET", f"/_synapse/admin/v1/rooms/{quote(room_id, safe='')}").json()

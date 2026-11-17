@@ -70,8 +70,13 @@ def rooms_page(request: Request, q: str = '', offset: str = '0'):
         return RedirectResponse('/login', 303)
     try:
         data = MatrixClient().list_rooms(offset=offset, search=q.strip())
-    except MatrixError:
-        raise HTTPException(502, 'Не удалось получить список комнат')
+    except MatrixError as exc:
+        message = {
+            403: 'Synapse отказал в доступе к комнатам. Проверьте права административного токена.',
+            400: 'Synapse отклонил параметры поиска. Очистите поиск и повторите запрос.',
+        }.get(exc.status_code, 'Не удалось получить список комнат. Проверьте доступность Synapse.')
+        return templates.TemplateResponse('rooms.html', dict(request=request, data={}, q=q,
+            room_url=room_url, error=message), status_code=502)
     return templates.TemplateResponse('rooms.html', dict(request=request, data=data, q=q, room_url=room_url))
 
 
