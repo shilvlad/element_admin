@@ -295,3 +295,20 @@ a {
         width: 100%;
     }
 }
+.notification-settings textarea {
+    display: block;
+    width: 100%;
+    max-width: 640px;
+    margin-top: 6px;
+    padding: 11px 12px;
+    border: 1px solid #475569;
+    border-radius: 8px;
+    background: #0f172a;
+    color: #fff;
+    font: inherit;
+}
+
+.notification-settings input[type="checkbox"] {
+    width: auto;
+    margin-right: 8px;
+}

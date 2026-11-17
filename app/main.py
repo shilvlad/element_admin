@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
 import time
 from email_validator import validate_email, EmailNotValidError
-from fastapi import FastAPI, Request, Form, Query, Depends
+from fastapi import FastAPI, Request, Form, Query, Depends, BackgroundTasks
 from typing import Literal
 from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -18,6 +18,7 @@ from .mail import send_moderation_notice, send_password_notice
 from .guards import csrf_token, protect_forms
 from .admin_views import router, fmt_time, user_url
 from .recovery import router as recovery_router
+from .notifications import router as settings_router, notify_registration
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 
@@ -35,6 +36,7 @@ templates.env.globals["csrf_token"] = csrf_token
 templates.env.globals.update(fmt_time=fmt_time, user_url=user_url)
 app.include_router(router)
 app.include_router(recovery_router)
+app.include_router(settings_router)
 password_hasher = PasswordHasher()
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
@@ -96,7 +98,7 @@ def dashboard(request: Request):
 def request_page(request: Request): return templates.TemplateResponse("request.html", {"request": request})
 
 @app.post("/request")
-def create_request(request: Request, username: str = Form(...), displayname: str = Form(""),
+def create_request(request: Request, background_tasks: BackgroundTasks, username: str = Form(...), displayname: str = Form(""),
                    requester: str = Form(...), password: str = Form(...),
                    password_confirm: str = Form(...)):
     def invalid(message, code=400):
@@ -143,6 +145,7 @@ def create_request(request: Request, username: str = Form(...), displayname: str
         rid = req.id
     try: send_moderation_notice(rid, username, requester)
     except Exception: pass
+    background_tasks.add_task(notify_registration, rid)
     return templates.TemplateResponse("result.html", {"request": request, "message": f"Заявка #{rid} создана и отправлена на модерацию. После одобрения войдите с выбранным паролем. Статус уточните у администратора."})
 
 @app.get("/requests")
