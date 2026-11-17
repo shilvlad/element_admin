@@ -43,6 +43,7 @@
     </div>
 
     <div class="user-actions">
+        {% if not u.deactivated %}
         <form method="post" action="/users/{{ u.name }}/password">
             <button type="submit">Сбросить пароль</button>
         </form>
