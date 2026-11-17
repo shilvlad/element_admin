@@ -62,28 +62,61 @@ def get_settings(request: Request):
     return settings_page(request, values)
 
 
+def matrix_check_error(subject, exc):
+    status = f"HTTP {exc.status_code}" if exc.status_code else "нет соединения с Matrix"
+    return f"Не удалось проверить {subject}: {status}. Настройки не изменены."
+
+
+def validate_recipient(matrix, uid):
+    try:
+        user = matrix.get_user(uid)
+    except MatrixError as exc:
+        if exc.status_code == 404:
+            raise ValueError(f"Пользователь {uid} не найден") from None
+        if exc.status_code != 403:
+            raise
+        # Sending a message does not require Synapse server-admin permissions.
+        # A regular account can check the recipient through the Client API.
+        try:
+            matrix.get_profile(uid)
+        except MatrixError as profile_error:
+            if profile_error.status_code == 404:
+                raise ValueError(f"Пользователь {uid} не найден или его профиль недоступен") from None
+            raise
+        return
+    if user.get("deactivated"):
+        raise ValueError(f"Пользователь {uid} деактивирован")
+
+
 @router.post("/settings")
 def save_settings(request: Request, recipients: str = Form(""), enabled: bool = Form(False)):
     from .main import admin_required, actor, client_ip
     if not admin_required(request):
         return RedirectResponse("/login", 303)
     values = {"enabled": enabled, "recipients": []}
+    sender = None
     try:
         values["recipients"] = normalize_recipients(recipients)
         if enabled and not values["recipients"]:
             raise ValueError("Укажите хотя бы одного получателя")
-        if enabled:
-            matrix = MatrixClient()
-            sender = matrix.whoami()
-            for uid in values["recipients"]:
-                if uid == sender:
-                    raise ValueError("Отправитель не может получать собственные уведомления")
-                if matrix.get_user(uid).get("deactivated"):
-                    raise ValueError(f"Пользователь {uid} деактивирован")
     except ValueError as exc:
         return settings_page(request, values, str(exc), 400)
-    except MatrixError:
-        return settings_page(request, values, "Не удалось проверить отправителя или получателей. Проверьте Matrix ID и токен.", 502)
+    if enabled:
+        matrix = MatrixClient()
+        try:
+            sender = matrix.whoami()
+        except MatrixError as exc:
+            return settings_page(request, values, matrix_check_error("отправителя", exc), 502,
+                                 sender="Не удалось определить")
+        for uid in values["recipients"]:
+            if uid == sender:
+                return settings_page(request, values, "Отправитель не может получать собственные уведомления", 400, sender)
+            try:
+                validate_recipient(matrix, uid)
+            except ValueError as exc:
+                return settings_page(request, values, str(exc), 400, sender)
+            except MatrixError as exc:
+                return settings_page(request, values, matrix_check_error(f"получателя {uid}", exc), 502, sender)
     with SessionLocal() as db:
         db.merge(PanelSetting(key=SETTING_KEY, value=json.dumps(values)))
         audit(db, actor(request), "MATRIX_NOTIFICATIONS_SETTINGS", "settings", client_ip(request))
