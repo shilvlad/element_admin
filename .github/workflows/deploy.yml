@@ -5,6 +5,10 @@ on:
     branches:
       - master
 
+  pull_request:
+    branches:
+      - master
+
   workflow_dispatch:
 
 permissions:
@@ -44,6 +48,7 @@ jobs:
         run: pytest -q
 
   deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
     needs: test
     runs-on: ubuntu-latest
 

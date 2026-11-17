@@ -21,10 +21,15 @@
     </form>
     {% endif %}
 
-    {% if r.status=='PENDING' %}
+    {% if r.status in ['PENDING','ERROR'] %}
     <form method="post" action="/requests/{{r.id}}/reject">
         <input name="reason" placeholder="Причина отказа">
         <button>Отклонить</button>
+    </form>
+    {% endif %}
+    {% if r.status == 'APPROVED' and r.error_message %}
+    <form method="post" action="/requests/{{r.id}}/invite">
+        <button>Повторить приглашение в Global</button>
     </form>
     {% endif %}
 </article>

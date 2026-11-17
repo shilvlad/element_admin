@@ -1,12 +1,14 @@
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from fastapi import FastAPI, Request, Form
 from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, update, delete
+from sqlalchemy.exc import IntegrityError
 from .config import settings
-from .db import SessionLocal, init_db, RegistrationRequest, ManagedUser, AuditLog, audit
+from .db import SessionLocal, init_db, RegistrationRequest, RegistrationReservation, ManagedUser, AuditLog, audit
 from .security import encrypt_secret, decrypt_secret, generate_password
 from .matrix import MatrixClient, MatrixError
 from .mail import send_moderation_notice
@@ -67,17 +69,50 @@ def dashboard(request: Request):
 def request_page(request: Request): return templates.TemplateResponse("request.html", {"request": request})
 
 @app.post("/request")
-def create_request(request: Request, username: str = Form(...), displayname: str = Form(""), requester: str = Form(...)):
+def create_request(request: Request, username: str = Form(...), displayname: str = Form(""),
+                   requester: str = Form(...), password: str = Form(...),
+                   password_confirm: str = Form(...)):
+    def invalid(message, code=400):
+        return templates.TemplateResponse("request.html", {"request": request, "error": message}, status_code=code)
+
     username = username.strip().lower().lstrip("@").split(":")[0]
-    if not username or any(c not in "abcdefghijklmnopqrstuvwxyz0123456789._=-" for c in username):
-        return templates.TemplateResponse("request.html", {"request": request, "error": "Недопустимый Matrix username"}, status_code=400)
-    password = generate_password()
+    if not username or len(username) > 200 or any(c not in "abcdefghijklmnopqrstuvwxyz0123456789._=-" for c in username):
+        return invalid("Недопустимый Matrix username")
+    if password != password_confirm:
+        return invalid("Пароли не совпадают")
+    if not 12 <= len(password) <= 128:
+        return invalid("Пароль должен содержать от 12 до 128 символов")
+    if not requester.strip() or len(requester) > 255 or len(displayname) > 255:
+        return invalid("Укажите контакт заявителя; поля имени и контакта — не более 255 символов")
+    uid = f"@{username}:{settings.matrix_server_name}"
+    try:
+        if MatrixClient().user_exists(uid):
+            return invalid("Логин уже занят", 409)
+    except MatrixError:
+        return invalid("Не удалось проверить логин на сервере. Попробуйте позже", 502)
     with SessionLocal() as db:
-        req = RegistrationRequest(requester=requester.strip(), username=username, displayname=displayname.strip(), password_enc=encrypt_secret(password), is_admin=False, status="PENDING")
-        db.add(req); db.flush(); audit(db, requester, "REGISTRATION_REQUEST", f"request:{req.id}", client_ip(request), f"username={username}"); db.commit(); rid=req.id
+        # Include old requests created before username reservations were introduced.
+        existing = db.scalar(select(RegistrationRequest.id).where(
+            RegistrationRequest.username == username,
+            RegistrationRequest.status != "REJECTED"))
+        if existing is not None:
+            return invalid("Заявка на этот логин уже существует", 409)
+        req = RegistrationRequest(requester=requester.strip(), username=username,
+                                  displayname=displayname.strip(), password_enc=encrypt_secret(password),
+                                  is_admin=False, status="PENDING")
+        try:
+            db.add(req)
+            db.flush()
+            db.add(RegistrationReservation(username=username, request_id=req.id))
+            audit(db, requester.strip(), "REGISTRATION_REQUEST", f"request:{req.id}", client_ip(request), f"username={username}")
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            return invalid("Заявка на этот логин уже существует", 409)
+        rid = req.id
     try: send_moderation_notice(rid, username, requester)
     except Exception: pass
-    return templates.TemplateResponse("result.html", {"request": request, "message": f"Заявка #{rid} создана и отправлена на модерацию."})
+    return templates.TemplateResponse("result.html", {"request": request, "message": f"Заявка #{rid} создана и отправлена на модерацию. После одобрения войдите с выбранным паролем. Статус уточните у администратора."})
 
 @app.get("/requests")
 def requests_page(request: Request):
@@ -89,33 +124,92 @@ def requests_page(request: Request):
 def approve(request: Request, rid: int, is_admin: bool = Form(False)):
     if not admin_required(request): return login_redirect()
     with SessionLocal() as db:
-        req=db.get(RegistrationRequest,rid)
-        if not req: return RedirectResponse("/requests",303)
-        if req.status not in ("PENDING","ERROR"): return RedirectResponse("/requests",303)
-        req.status="CREATING"; req.error_message=None; db.commit()
-        try:
-            password=decrypt_secret(req.password_enc)
-            uid=f"@{req.username}:{settings.matrix_server_name}"
-            m=MatrixClient(); m.create_user(uid,password,req.displayname,is_admin)
-            req.status="CREATED"; db.commit()
-            # Password is no longer needed after successful user creation.
-            req.password_enc=None
-            managed=db.scalar(select(ManagedUser).where(ManagedUser.user_id==uid))
-            if not managed: db.add(ManagedUser(user_id=uid,username=req.username,displayname=req.displayname,active=True))
-            req.status="APPROVED"; req.decided_by=actor(request); req.decided_at=__import__('datetime').datetime.now(__import__('datetime').timezone.utc)
-            audit(db, actor(request), "APPROVE_REGISTRATION", uid, client_ip(request), f"request={rid}")
+        req = db.get(RegistrationRequest, rid)
+        if not req or req.status not in ("PENDING", "ERROR"):
+            return RedirectResponse("/requests", 303)
+        reservation = db.get(RegistrationReservation, req.username)
+        if reservation and reservation.request_id != rid:
+            req.error_message = "Этот логин зарезервирован другой заявкой. Отклоните дубликат."
             db.commit()
-        except Exception as e:
-            req.status="ERROR"; req.error_message=str(e)[:1000]; audit(db, actor(request), "APPROVE_ERROR", f"request:{rid}", client_ip(request), str(e)[:1000]); db.commit()
-    return RedirectResponse("/requests",303)
+            return RedirectResponse("/requests", 303)
+        try:
+            if not reservation:
+                db.add(RegistrationReservation(username=req.username, request_id=rid))
+                db.flush()
+            claimed = db.execute(update(RegistrationRequest).where(
+                RegistrationRequest.id == rid,
+                RegistrationRequest.status.in_(("PENDING", "ERROR"))
+            ).values(status="CREATING", error_message=None), execution_options={"synchronize_session": False})
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            return RedirectResponse("/requests", 303)
+        if claimed.rowcount != 1:
+            return RedirectResponse("/requests", 303)
+        db.refresh(req)
+        uid = f"@{req.username}:{settings.matrix_server_name}"
+        m = MatrixClient()
+        try:
+            password = decrypt_secret(req.password_enc)
+            m.create_user(uid, password, req.displayname, is_admin)
+        except Exception:
+            # Do not save upstream error bodies: they may contain credentials.
+            req.status = "ERROR"
+            req.error_message = "Создание не подтверждено. Проверьте наличие учётной записи в Synapse перед повтором; существующая запись не будет изменена."
+            audit(db, actor(request), "APPROVE_ERROR", f"request:{rid}", client_ip(request))
+            db.commit()
+            return RedirectResponse("/requests", 303)
+        # Commit account creation and secret deletion before attempting the invite.
+        req.password_enc = None
+        if not db.scalar(select(ManagedUser).where(ManagedUser.user_id == uid)):
+            db.add(ManagedUser(user_id=uid, username=req.username, displayname=req.displayname, active=True))
+        req.status = "APPROVED"
+        req.is_admin = is_admin
+        req.decided_by = actor(request)
+        req.decided_at = datetime.now(timezone.utc)
+        audit(db, actor(request), "APPROVE_REGISTRATION", uid, client_ip(request), f"request={rid}")
+        db.commit()
+        try:
+            m.invite_to_room(settings.global_room_id, uid, actor(request))
+        except Exception:
+            req.error_message = "Учётная запись создана. Приглашение в Global не отправлено; можно повторить отдельно."
+            audit(db, actor(request), "INVITE_ERROR", uid, client_ip(request))
+            db.commit()
+    return RedirectResponse("/requests", 303)
+
+
+@app.post("/requests/{rid}/invite")
+def retry_invite(request: Request, rid: int):
+    if not admin_required(request): return login_redirect()
+    with SessionLocal() as db:
+        req = db.get(RegistrationRequest, rid)
+        if not req or req.status != "APPROVED":
+            return RedirectResponse("/requests", 303)
+        uid = f"@{req.username}:{settings.matrix_server_name}"
+        try:
+            MatrixClient().invite_to_room(settings.global_room_id, uid, actor(request))
+            req.error_message = None
+            audit(db, actor(request), "INVITE_USER", uid, client_ip(request))
+        except Exception:
+            req.error_message = "Учётная запись создана. Приглашение в Global не отправлено; можно повторить отдельно."
+            audit(db, actor(request), "INVITE_ERROR", uid, client_ip(request))
+        db.commit()
+    return RedirectResponse("/requests", 303)
 
 @app.post("/requests/{rid}/reject")
 def reject(request: Request, rid: int, reason: str = Form("")):
     if not admin_required(request): return login_redirect()
     with SessionLocal() as db:
         req=db.get(RegistrationRequest,rid)
-        if req and req.status=="PENDING":
-            req.status="REJECTED"; req.decided_by=actor(request); req.reject_reason=reason; req.decided_at=__import__('datetime').datetime.now(__import__('datetime').timezone.utc); req.password_enc=None
+        if req and req.status in ("PENDING", "ERROR"):
+            claimed = db.execute(update(RegistrationRequest).where(
+                RegistrationRequest.id == rid, RegistrationRequest.status.in_(("PENDING", "ERROR"))
+            ).values(status="REJECTED"), execution_options={"synchronize_session": False})
+            if claimed.rowcount != 1:
+                db.rollback()
+                return RedirectResponse("/requests", 303)
+            db.execute(delete(RegistrationReservation).where(RegistrationReservation.request_id == rid))
+            req.status="REJECTED"; req.decided_by=actor(request); req.reject_reason=reason; req.decided_at=datetime.now(timezone.utc); req.password_enc=None
             audit(db,actor(request),"REJECT_REGISTRATION",f"request:{rid}",client_ip(request),reason); db.commit()
     return RedirectResponse("/requests",303)
 
