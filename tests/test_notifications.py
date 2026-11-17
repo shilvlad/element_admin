@@ -151,3 +151,65 @@ def test_matrix_transport_uses_configured_token(monkeypatch):
     assert calls[2][1].endswith('/rooms/%21room%3Aserver/send/m.room.message/transaction')
     assert calls[2][2]['json'] == {'msgtype': 'm.text', 'body': 'test'}
     assert all(call[2]['headers']['Authorization'] == f'Bearer {settings.matrix_admin_token}' for call in calls)
+
+
+def test_settings_allow_client_token_without_admin_api(client, monkeypatch, matrix):
+    login(client, monkeypatch)
+    matrix.get_user.side_effect = MatrixError('server admin required', 403)
+    matrix.get_profile.return_value = {'displayname': 'Ilya'}
+    response = client.post('/settings', data={'enabled': 'true', 'recipients': 'ilya'})
+    assert response.status_code == 200
+    matrix.get_profile.assert_called_once_with(f'@ilya:{settings.matrix_server_name}')
+    with SessionLocal() as db:
+        assert json.loads(db.get(PanelSetting, SETTING_KEY).value)['enabled'] is True
+
+
+@pytest.mark.parametrize('status', [401, 500, None])
+def test_recipient_error_identifies_failed_check(client, monkeypatch, matrix, status):
+    login(client, monkeypatch)
+    matrix.get_user.side_effect = MatrixError('secret-token', status)
+    response = client.post('/settings', data={'enabled': 'true', 'recipients': 'ilya'})
+    assert response.status_code == 502
+    assert f'получателя @ilya:{settings.matrix_server_name}' in response.text
+    assert (f'HTTP {status}' if status else 'нет соединения') in response.text
+    assert 'secret-token' not in response.text
+    matrix.get_profile.assert_not_called()
+
+
+@pytest.mark.parametrize('profile_status', [None, 404, 403])
+def test_profile_fallback_failure_does_not_save(client, monkeypatch, matrix, profile_status):
+    login(client, monkeypatch)
+    matrix.get_user.side_effect = MatrixError('forbidden', 403)
+    matrix.get_profile.side_effect = MatrixError('private-response', profile_status)
+    response = client.post('/settings', data={'enabled': 'true', 'recipients': 'ilya'})
+    assert response.status_code == (400 if profile_status == 404 else 502)
+    assert 'private-response' not in response.text
+    with SessionLocal() as db:
+        assert db.get(PanelSetting, SETTING_KEY) is None
+
+
+def test_missing_user_does_not_fall_back(client, monkeypatch, matrix):
+    login(client, monkeypatch)
+    matrix.get_user.side_effect = MatrixError('missing', 404)
+    response = client.post('/settings', data={'enabled': 'true', 'recipients': 'ilya'})
+    assert response.status_code == 400
+    assert 'не найден' in response.text
+    matrix.get_profile.assert_not_called()
+
+
+def test_sender_failure_is_reported_once(client, monkeypatch, matrix):
+    login(client, monkeypatch)
+    matrix.whoami.side_effect = MatrixError('secret-token', 401)
+    response = client.post('/settings', data={'enabled': 'true', 'recipients': 'ilya'})
+    assert response.status_code == 502
+    assert 'отправителя: HTTP 401' in response.text
+    assert 'secret-token' not in response.text
+    matrix.whoami.assert_called_once()
+    matrix.get_user.assert_not_called()
+
+
+def test_profile_request_encoding(monkeypatch):
+    request = Mock(return_value=httpx.Response(200, json={}))
+    monkeypatch.setattr('httpx.request', request)
+    assert MatrixClient().get_profile('@ilya:server') == {}
+    assert request.call_args.args[1].endswith('/_matrix/client/v3/profile/%40ilya%3Aserver')

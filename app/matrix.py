@@ -50,6 +50,9 @@ class MatrixClient:
     def get_user(self, user_id):
         return self._request("GET", f"/_synapse/admin/v2/users/{quote(user_id, safe='')}").json()
 
+    def get_profile(self, user_id):
+        return self._request("GET", f"/_matrix/client/v3/profile/{quote(user_id, safe='')}").json()
+
     def list_users(self, limit=1000, include_deactivated=False):
         users = []
         params = {"limit": limit, "deactivated": str(include_deactivated).lower()}
