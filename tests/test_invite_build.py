@@ -1,4 +1,5 @@
 from unittest.mock import Mock
+from urllib.parse import quote
 
 import pytest
 from fastapi.testclient import TestClient
@@ -98,5 +99,5 @@ def test_users_show_invite_only_for_active_accounts(client, matrix, monkeypatch)
         {"name": "@old:example.invalid", "deactivated": True}]}
     response = client.get("/users?status=all")
     assert response.status_code == 200
-    assert "/users/" + UID + "/invite-global" in response.text
-    assert "/users/@old:example.invalid/invite-global" not in response.text
+    assert "/users/" + quote(UID, safe="") + "/invite-global" in response.text
+    assert "/users/" + quote("@old:example.invalid", safe="") + "/invite-global" not in response.text
