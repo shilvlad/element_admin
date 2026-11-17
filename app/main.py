@@ -19,6 +19,7 @@ from .guards import csrf_token, protect_forms
 from .admin_views import router, fmt_time, user_url
 from .recovery import router as recovery_router
 from .notifications import router as settings_router, notify_registration
+from .build import build_info
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 
@@ -33,6 +34,7 @@ app.add_middleware(SessionMiddleware, secret_key=settings.secret_key, https_only
 templates = Jinja2Templates(directory="app/templates")
 templates.env.globals.update(matrix_homeserver=settings.matrix_homeserver.rstrip("/"), matrix_server_name=settings.matrix_server_name)
 templates.env.globals["csrf_token"] = csrf_token
+templates.env.globals["build_info"] = build_info
 templates.env.globals.update(fmt_time=fmt_time, user_url=user_url)
 app.include_router(router)
 app.include_router(recovery_router)
@@ -388,3 +390,37 @@ def diagnostics(request: Request):
     except Exception as e:
         checks.append(("Database", False, str(e)[:500]))
     return templates.TemplateResponse("diagnostics.html", {"request": request, "checks": checks})
+
+
+@app.get("/about")
+def about(request: Request):
+    if not admin_required(request): return login_redirect()
+    return templates.TemplateResponse("about.html", {"request": request, "build": build_info()})
+
+
+@app.post("/users/{user_id:path}/invite-global")
+def invite_global(request: Request, user_id: str):
+    if not admin_required(request): return login_redirect()
+    matrix = MatrixClient()
+    code = 200
+    action = "INVITE_GLOBAL"
+    try:
+        user = matrix.get_user(user_id)
+        if user.get("deactivated"):
+            return templates.TemplateResponse("result.html", {"request": request,
+                "message": "Сначала активируйте учётную запись."}, status_code=400)
+        rooms = matrix.user_rooms(user_id).get("joined_rooms", [])
+        if settings.global_room_id in rooms:
+            message = f"{user_id} уже состоит в Global."
+            action = "INVITE_GLOBAL_SKIPPED"
+        else:
+            matrix.invite_to_room(settings.global_room_id, user_id, actor(request))
+            message = f"Приглашение в Global отправлено для {user_id}. Пользователю нужно принять его в Element."
+    except MatrixError:
+        code = 502
+        action = "INVITE_GLOBAL_ERROR"
+        message = "Не удалось отправить приглашение в Global. Проверьте доступность Synapse и права отправителя."
+    with SessionLocal() as db:
+        audit(db, actor(request), action, user_id, client_ip(request))
+        db.commit()
+    return templates.TemplateResponse("result.html", {"request": request, "message": message}, status_code=code)

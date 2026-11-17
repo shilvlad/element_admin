@@ -1,0 +1,8 @@
+{% extends 'base.html' %}{% block content %}
+<h1>О сборке</h1>
+<p>Версия element-admin: {{ build.version }}</p>
+<p>Коммит: <code>{{ build.commit }}</code></p>
+<p>Дата сборки (UTC): {{ build.built_at }}</p>
+<h2>Изменения этой версии</h2>
+<ul>{% for change in build.changes %}<li>{{ change }}</li>{% endfor %}</ul>
+{% endblock %}

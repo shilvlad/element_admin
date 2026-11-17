@@ -44,6 +44,10 @@
 
     <div class="user-actions">
         {% if not u.deactivated %}
+        <form method="post" action="/users/{{ u.name | urlencode }}/invite-global">
+<input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+<button type="submit">Пригласить в Global</button>
+</form>
         <form method="post" action="/users/{{ u.name }}/password">
 <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
             <button type="submit">Сбросить пароль</button>
