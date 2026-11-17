@@ -80,8 +80,8 @@ def create_request(request: Request, username: str = Form(...), displayname: str
         return invalid("Недопустимый Matrix username")
     if password != password_confirm:
         return invalid("Пароли не совпадают")
-    if not 12 <= len(password) <= 128:
-        return invalid("Пароль должен содержать от 12 до 128 символов")
+    if not 8 <= len(password) <= 128:
+        return invalid("Пароль должен содержать от 8 до 128 символов")
     if not requester.strip() or len(requester) > 255 or len(displayname) > 255:
         return invalid("Укажите контакт заявителя; поля имени и контакта — не более 255 символов")
     uid = f"@{username}:{settings.matrix_server_name}"
