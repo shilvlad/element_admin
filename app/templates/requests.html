@@ -5,18 +5,21 @@
 
 {% for r in rows %}
 <article id="request-{{r.id}}">
-    <b>#{{r.id}}</b> {{r.username}} — {{r.status}} — {{r.requester}}
+    <div class="request-heading"><b>#{{r.id}} · {{r.username}}</b>
+    <span class="badge {{ 'approved' if r.status == 'APPROVED' else ('rejected' if r.status == 'REJECTED' else 'pending') }}">{{ {'PENDING': 'Ожидает', 'APPROVED': 'Одобрена', 'REJECTED': 'Отклонена', 'ERROR': 'Ошибка', 'CREATING': 'Создаётся', 'CREATED': 'Создана', 'RECOVERING': 'Восстановление'}.get(r.status, r.status) }}</span></div>
+    <p class="quiet">{{r.requester}}</p>
 
     {% if r.error_message %}
     <p class="error">{{r.error_message}}</p>
     {% endif %}
 
+    <div class="request-actions">
     {% if r.status in ['PENDING','ERROR'] %}
     <form method="post" action="/requests/{{r.id}}/approve">
 <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
         <label>
             <input type="checkbox" name="is_admin" value="true">
-            Администратор
+            Администратор сервера Matrix
         </label>
         <button>Одобрить</button>
     </form>
@@ -26,7 +29,7 @@
     <form method="post" action="/requests/{{r.id}}/reject">
 <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
         <input name="reason" placeholder="Причина отказа">
-        <button>Отклонить</button>
+        <button class="danger">Отклонить</button>
     </form>
     {% endif %}
     {% if r.status == 'APPROVED' and r.error_message %}
@@ -42,6 +45,7 @@
         <button>Сверить с Synapse</button>
     </form>
     {% endif %}
+</div>
 </article>
 {% else %}
 <p>Заявок нет.</p>

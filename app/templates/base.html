@@ -1,14 +1,42 @@
-<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{ request.app.title }}</title><link rel="stylesheet" href="{{ url_for('static', path='style.css') }}"></head><body><div class="topbar"><nav>
-    <a href="/">Главная</a>
-    {% if request.session.get('admin') %}
-        <a href="/requests">Заявки</a>
-        <a href="/users">Пользователи</a>
-        <a href="/rooms">Комнаты</a>
-        <a href="/audit">Аудит</a>
-        <a href="/diagnostics">Состояние</a>
-        <a href="/settings">Настройки</a>
-        <form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}"><button>Выход</button></form>
-    {% else %}
-        <a href="/request">Создать пользователя</a>
-    {% endif %}
-</nav>{% if request.session.get("admin") %}{% set build = build_info() %}<a class="build-badge" href="/about">element-admin {{ build.version }}<small>Сборка: {{ build.short_commit }}</small></a>{% endif %}</div><main>{% block content %}{% endblock %}</main></body></html>
+{% set admin_layout = request.session.get('admin') and request.url.path != '/request' %}
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ request.app.title }}</title>
+<link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
+{% if admin_layout %}<link rel="stylesheet" href="{{ url_for('static', path='admin.css') }}">{% endif %}
+</head>
+<body{% if admin_layout %} class="admin-layout"{% endif %}>
+{% if admin_layout %}
+{% set path = request.url.path %}
+{% set sections = [('/', 'Главная'), ('/requests', 'Заявки'), ('/users', 'Пользователи'), ('/rooms', 'Комнаты'), ('/audit', 'Аудит'), ('/diagnostics', 'Состояние'), ('/settings', 'Настройки'), ('/about', 'О сборке')] %}
+<aside class="sidebar">
+<a class="brand" href="/">element<span>admin</span></a>
+<p class="nav-caption">УПРАВЛЕНИЕ MATRIX</p>
+<nav aria-label="Основное меню">
+{% for href, title in sections %}<a href="{{ href }}"{% if path == href or (href != '/' and path.startswith(href + '/')) %} aria-current="page"{% endif %}>{{ title }}</a>{% endfor %}
+</nav>
+<form class="logout" method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}"><button class="secondary">Выйти из панели</button></form>
+</aside>
+<header class="admin-header">
+<div><span class="header-label">Панель администратора</span><span class="header-server">{{ matrix_server_name }}</span></div>
+{% set build = build_info() %}<a class="build-badge" href="/about">element-admin {{ build.version }}<small>Сборка: {{ build.short_commit }}</small></a>
+</header>
+<nav class="mobile-nav" aria-label="Мобильное меню">
+{% for href, title in sections[:3] %}<a href="{{ href }}"{% if path == href or (href != '/' and path.startswith(href + '/')) %} aria-current="page"{% endif %}>{{ title }}</a>{% endfor %}
+<details class="more-menu"><summary>Ещё</summary><div>
+{% for href, title in sections[3:] %}<a href="{{ href }}"{% if path == href %} aria-current="page"{% endif %}>{{ title }}</a>{% endfor %}
+<form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}"><button class="secondary">Выйти</button></form>
+</div></details>
+</nav>
+{% else %}
+<div class="topbar"><nav><a href="/">Главная</a>
+{% if request.session.get('admin') %}
+<a href="/requests">Заявки</a><a href="/users">Пользователи</a><a href="/rooms">Комнаты</a><a href="/audit">Аудит</a><a href="/diagnostics">Состояние</a><a href="/settings">Настройки</a>
+<form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}"><button>Выход</button></form>
+{% else %}<a href="/request">Создать пользователя</a>{% endif %}
+</nav>{% if request.session.get('admin') %}{% set build = build_info() %}<a class="build-badge" href="/about">element-admin {{ build.version }}<small>Сборка: {{ build.short_commit }}</small></a>{% endif %}</div>
+{% endif %}
+<main id="main-content">{% block content %}{% endblock %}</main>
+</body></html>

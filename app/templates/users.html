@@ -42,7 +42,7 @@
         </div>
     </div>
 
-    <div class="user-actions">
+    <div class="user-actions"><details><summary aria-label="Действия с пользователем {{ u.name }}">Действия ···</summary><div class="action-menu">
         {% if not u.deactivated %}
         <form method="post" action="/users/{{ u.name | urlencode }}/invite-global">
 <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
@@ -63,7 +63,7 @@
             <button type="submit">Активировать</button>
         </form>
         {% endif %}
-    </div>
+    </div></details></div>
 
 </div>
 {% else %}
