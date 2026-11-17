@@ -3,6 +3,16 @@ import ssl
 from email.message import EmailMessage
 from html import escape
 from .config import settings
+from .db import SessionLocal, PanelSetting
+
+EMAIL_NOTICE_KEY = "email_moderation_notifications"
+
+
+def email_notices_enabled():
+    with SessionLocal() as db:
+        row = db.get(PanelSetting, EMAIL_NOTICE_KEY)
+        return row.value == "true" if row else True
+
 
 def sender_address():
     sender = settings.smtp_from or settings.smtp_user
@@ -12,6 +22,8 @@ def sender_address():
 
 
 def send_moderation_notice(request_id, username, requester):
+    if not email_notices_enabled():
+        return
     msg = EmailMessage()
     msg["Subject"] = f"Новая заявка Matrix #{request_id}"
     msg["From"] = sender_address()

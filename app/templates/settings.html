@@ -1,10 +1,18 @@
 {% extends 'base.html' %}
 {% block content %}
 <h1>Настройки</h1>
-<h2>Уведомления о новых заявках в Matrix</h2>
-<p>Отправитель: {{ sender }}</p>
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
 {% if saved %}<p>Настройки сохранены.</p>{% endif %}
+<h2>Уведомления о новых заявках по email</h2>
+<p>Получатель: {{ admin_email }} (ADMIN_EMAIL в конфигурации сервера).</p>
+<form method="post" action="/settings/email" class="notification-settings">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <label><input type="checkbox" name="enabled" value="true" {% if email_enabled %}checked{% endif %}> Уведомлять администратора по email</label>
+    <p>Отправлять письмо при поступлении заявки. На отправку новых паролей при сбросе эта настройка не влияет.</p>
+    <button>Сохранить</button>
+</form>
+<h2>Уведомления о новых заявках в Matrix</h2>
+<p>Отправитель: {{ sender }}</p>
 <form method="post" action="/settings" class="notification-settings">
     <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
     <label><input type="checkbox" name="enabled" value="true" {% if enabled %}checked{% endif %}> Отправлять уведомления</label>

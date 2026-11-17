@@ -77,11 +77,12 @@ def test_build_page_and_badge_are_admin_only(client, monkeypatch):
     monkeypatch.setenv("BUILD_DATE", "2026-11-18T00:00:00Z")
     response = client.get("/about")
     assert response.status_code == 200
-    assert "01.00" in response.text
+    from app.build import VERSION
+    assert VERSION in response.text
     assert "abcdef0123456789" in response.text
     assert "abcdef01" in response.text
     assert "2026-11-18T00:00:00Z" in response.text
-    assert "Повторное приглашение" in response.text
+    assert "email-уведомлений" in response.text
 
 
 def test_unknown_build_is_honest(client, monkeypatch):
