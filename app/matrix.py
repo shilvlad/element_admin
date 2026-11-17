@@ -59,6 +59,10 @@ class MatrixClient:
             "deactivated": False,
         })
 
+    def reset_password(self, user_id, password):
+        self._request("POST", f"/_synapse/admin/v1/reset_password/{quote(user_id, safe='')}",
+                      json={"new_password": password, "logout_devices": True})
+
     def update_user(self, user_id, **payload):
         self._request("PUT", f"/_synapse/admin/v2/users/{quote(user_id, safe='')}", json=payload)
 

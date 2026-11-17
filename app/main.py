@@ -220,15 +220,28 @@ def users_page(request: Request, q: str = ""):
     if q: data=[u for u in data if q.lower() in str(u).lower()]
     return templates.TemplateResponse("users.html", {"request": request, "users": data, "q": q})
 
+@app.post("/users/{user_id:path}/reset_password", include_in_schema=False)
 @app.post("/users/{user_id:path}/password")
 def reset_password(request: Request, user_id: str):
     if not admin_required(request): return login_redirect()
-    pwd=generate_password()
+    password = generate_password()
     try:
-        MatrixClient().update_user(user_id,password=pwd)
-        with SessionLocal() as db: audit(db,actor(request),"RESET_PASSWORD",user_id,client_ip(request)); db.commit()
-        return templates.TemplateResponse("result.html", {"request":request,"message":f"Пароль сброшен для {user_id}.","secret":pwd})
-    except Exception as e: return templates.TemplateResponse("result.html", {"request":request,"message":f"Ошибка: {e}"},status_code=502)
+        MatrixClient().reset_password(user_id, password)
+    except MatrixError as exc:
+        message = {
+            403: "Synapse отказал в доступе. Проверьте права административного токена.",
+            404: "Учётная запись не найдена либо API сброса пароля недоступен.",
+            400: "Synapse отклонил сброс пароля. Проверьте настройки локальной авторизации и требования к паролю.",
+        }.get(exc.status_code, "Не удалось подтвердить сброс пароля в Synapse. Обновите список пользователей и повторите попытку.")
+        return templates.TemplateResponse("result.html", {"request": request, "message": message},
+                                          status_code=502, headers={"Cache-Control": "no-store"})
+    with SessionLocal() as db:
+        audit(db, actor(request), "RESET_PASSWORD", user_id, client_ip(request))
+        db.commit()
+    return templates.TemplateResponse("result.html", {
+        "request": request, "message": f"Пароль сброшен для {user_id}. Передайте пользователю новый пароль.",
+        "secret": password,
+    }, headers={"Cache-Control": "no-store"})
 
 @app.post("/users/{user_id:path}/deactivate")
 def deactivate(request: Request,user_id:str):
