@@ -3,15 +3,22 @@
 {% block content %}
 <h1>Пользователи</h1>
 
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
 <form method="get" class="search">
     <input
         type="text"
         name="q"
         value="{{ q or '' }}"
         placeholder="Поиск по логину или имени">
+    <select name="status" aria-label="Статус учётной записи">
+        <option value="active" {% if status == 'active' %}selected{% endif %}>Активные</option>
+        <option value="deactivated" {% if status == 'deactivated' %}selected{% endif %}>Деактивированные</option>
+        <option value="all" {% if status == 'all' %}selected{% endif %}>Все</option>
+    </select>
     <button type="submit">Найти</button>
 </form>
 
+<p>Найдено: {{ total }}</p>
 <div class="card">
 
 {% for u in users %}
@@ -36,13 +43,17 @@
     </div>
 
     <div class="user-actions">
-        <form method="post" action="/users/{{ u.name }}/reset_password">
+        {% if not u.deactivated %}
+        <form method="post" action="/users/{{ u.name }}/password">
             <button type="submit">Сбросить пароль</button>
         </form>
 
-        {% if not u.deactivated %}
         <form method="post" action="/users/{{ u.name }}/deactivate">
             <button type="submit" class="danger">Деактивировать</button>
+        </form>
+        {% else %}
+        <form method="post" action="/users/{{ u.name }}/activate">
+            <button type="submit">Активировать</button>
         </form>
         {% endif %}
     </div>
@@ -53,4 +64,11 @@
 {% endfor %}
 
 </div>
+{% if pages > 1 %}
+<nav aria-label="Страницы пользователей">
+    {% if page > 1 %}<a href="{{ request.url.include_query_params(page=page-1) }}">Назад</a>{% endif %}
+    <span>Страница {{ page }} из {{ pages }}</span>
+    {% if page < pages %}<a href="{{ request.url.include_query_params(page=page+1) }}">Далее</a>{% endif %}
+</nav>
+{% endif %}
 {% endblock %}
