@@ -73,7 +73,7 @@ jobs:
              git fetch origin master && \
              git reset --hard origin/master && \
              docker compose config --quiet && \
-             docker compose build && \
+             docker compose build --build-arg BUILD_COMMIT="$(git rev-parse HEAD)" --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" && \
              docker compose up -d --wait && \
              curl -fsS http://127.0.0.1:8080/health && \
              docker compose ps'

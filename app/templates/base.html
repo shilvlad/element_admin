@@ -1,4 +1,4 @@
-<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{ request.app.title }}</title><link rel="stylesheet" href="{{ url_for('static', path='style.css') }}"></head><body><nav>
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{ request.app.title }}</title><link rel="stylesheet" href="{{ url_for('static', path='style.css') }}"></head><body><div class="topbar"><nav>
     <a href="/">Главная</a>
     {% if request.session.get('admin') %}
         <a href="/requests">Заявки</a>
@@ -11,4 +11,4 @@
     {% else %}
         <a href="/request">Создать пользователя</a>
     {% endif %}
-</nav><main>{% block content %}{% endblock %}</main></body></html>
+</nav>{% if request.session.get("admin") %}{% set build = build_info() %}<a class="build-badge" href="/about">element-admin {{ build.version }}<small>Сборка: {{ build.short_commit }}</small></a>{% endif %}</div><main>{% block content %}{% endblock %}</main></body></html>

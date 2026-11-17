@@ -1,5 +1,17 @@
 # Synapse User Manager v2
 
+### Версия и сборка
+
+Справа сверху — версия панели и коммит; подробности доступны на странице «О сборке». При автоматическом деплое коммит и дата записываются в образ. При ручной сборке:
+
+```bash
+docker compose build --build-arg BUILD_COMMIT="$(git rev-parse HEAD)" --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+docker compose up -d
+```
+
+Без аргументов сборки коммит и дата отмечены как неизвестные. Версия и список изменений задаются в `app/build.py`.
+
+
 Production-oriented FastAPI service for managing Synapse users.
 
 ## Main improvements
