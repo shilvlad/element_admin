@@ -13,7 +13,7 @@ from app.main import app
 from app.matrix import MatrixClient, MatrixError
 from app.security import decrypt_secret
 
-PASSWORD = "my-test-password-123"
+PASSWORD = "test1234"
 
 
 @pytest.fixture
@@ -57,7 +57,7 @@ def test_chosen_password_is_encrypted_and_public_cannot_create_admin(client, mat
 
 @pytest.mark.parametrize("fields,status", [
     ({"password_confirm": "different"}, 400),
-    ({"password": "short", "password_confirm": "short"}, 400),
+    ({"password": "1234567", "password_confirm": "1234567"}, 400),
     ({"password": "x" * 129, "password_confirm": "x" * 129}, 400),
     ({"requester": "   "}, 400),
     ({"username": "bad/name"}, 400),

@@ -36,8 +36,21 @@ class MatrixClient:
     def get_user(self, user_id):
         return self._request("GET", f"/_synapse/admin/v2/users/{quote(user_id, safe='')}").json()
 
-    def list_users(self, limit=1000):
-        return self._request("GET", f"/_synapse/admin/v2/users?limit={limit}").json()
+    def list_users(self, limit=1000, include_deactivated=False):
+        users = []
+        params = {"limit": limit, "deactivated": str(include_deactivated).lower()}
+        seen_tokens = set()
+        while True:
+            data = self._request("GET", "/_synapse/admin/v2/users", params=params).json()
+            users.extend(data.get("users", []))
+            token = data.get("next_token")
+            if token is None:
+                return {"users": users, "total": len(users)}
+            token = str(token)
+            if token in seen_tokens:
+                raise MatrixError("Synapse вернул повторный токен страницы пользователей")
+            seen_tokens.add(token)
+            params["from"] = token
 
     def user_exists(self, user_id):
         try:
