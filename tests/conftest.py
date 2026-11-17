@@ -26,3 +26,8 @@ class CSRFClient(TestClient):
 def client():
     with CSRFClient(app) as client:
         yield client
+
+@pytest.fixture(autouse=True)
+def no_live_update_checks(monkeypatch):
+    monkeypatch.setattr('app.main.synapse_update_status', lambda: dict(
+        current=None, latest=None, update_available=None, version_error=True, release_error=True))

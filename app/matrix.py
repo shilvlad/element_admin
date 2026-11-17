@@ -24,6 +24,9 @@ class MatrixClient:
             raise MatrixError(f"HTTP {r.status_code}: {body}", r.status_code)
         return r
 
+    def server_version(self):
+        return self._request("GET", "/_synapse/admin/v1/server_version").json()["server_version"]
+
     def whoami(self):
         return self._request("GET", "/_matrix/client/v3/account/whoami").json()["user_id"]
 

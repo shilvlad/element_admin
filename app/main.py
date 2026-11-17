@@ -19,6 +19,7 @@ from .guards import csrf_token, protect_forms
 from .admin_views import router, fmt_time, user_url
 from .recovery import router as recovery_router
 from .notifications import router as settings_router, notify_registration
+from .updates import synapse_update_status
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 
@@ -92,7 +93,8 @@ def dashboard(request: Request):
     except MatrixError:
         pass
     return templates.TemplateResponse("dashboard.html", dict(request=request, statuses=statuses, errors=errors,
-        recent=recent, available=available, total=total, active=active, deactivated=deactivated, seen=seen))
+        recent=recent, available=available, total=total, active=active, deactivated=deactivated, seen=seen,
+        synapse_update=synapse_update_status()))
 
 @app.get("/request")
 def request_page(request: Request): return templates.TemplateResponse("request.html", {"request": request})

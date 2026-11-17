@@ -1,6 +1,15 @@
 {% extends 'base.html' %}{% block content %}
 <h1>Сводка</h1>
 <p>Synapse Admin API: {% if available %}доступен{% else %}<span class="error">недоступен</span>{% endif %}</p>
+<div class="card"><h2>Обновления Synapse</h2>
+<p>Установлено: {{ synapse_update.current or 'Не удалось определить' }} · Последний стабильный релиз: {{ synapse_update.latest or 'Нет данных' }}</p>
+{% if synapse_update.release_error %}<p>Не удалось проверить обновления. Повторная проверка через 5 минут; сохранённые данные могут быть устаревшими.</p>
+{% elif synapse_update.update_available == true %}<p><b>Доступна новая версия Synapse.</b> Перед обновлением ознакомьтесь с изменениями.</p>
+{% elif synapse_update.update_available == false %}<p>Более новая стабильная версия не найдена.</p>{% endif %}
+{% if synapse_update.version_error %}<p>Не удалось получить установленную версию Synapse.</p>{% endif %}
+{% if synapse_update.latest %}<p><a href="{{ synapse_update.release_url }}" target="_blank" rel="noopener noreferrer">Изменения релиза</a></p>{% endif %}
+{% if synapse_update.checked_at %}<p>Последняя успешная проверка: {{ fmt_time(synapse_update.checked_at) }}. Проверяется автоматически раз в час при открытии главной.</p>{% endif %}
+</div>
 <div class="card"><h2>Пользователи</h2>
 <p>Всего: {{ total if total is not none else 'Нет данных' }} · Активные: {{ active if active is not none else 'Нет данных' }} · Деактивированные: {{ deactivated if deactivated is not none else 'Нет данных' }}</p>
 <p>Подключались за 24 часа: {{ seen if seen is not none else 'Synapse не передаёт время активности' }}</p></div>
