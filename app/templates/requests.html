@@ -6,7 +6,7 @@
 {% for r in rows %}
 <article id="request-{{r.id}}">
     <div class="request-heading"><b>#{{r.id}} · {{r.username}}</b>
-    <span class="badge {{ 'approved' if r.status == 'APPROVED' else ('rejected' if r.status == 'REJECTED' else 'pending') }}">{{ {'PENDING': 'Ожидает', 'APPROVED': 'Одобрена', 'REJECTED': 'Отклонена', 'ERROR': 'Ошибка', 'CREATING': 'Создаётся', 'CREATED': 'Создана', 'RECOVERING': 'Восстановление'}.get(r.status, r.status) }}</span></div>
+    <span class="badge {{ 'approved' if r.status == 'APPROVED' else ('rejected' if r.status == 'REJECTED' else 'pending') }}">{{ {'PENDING': 'Ожидает', 'APPROVED': 'Одобрена', 'REJECTED': 'Отклонена', 'EXPIRED': 'Истекла', 'ERROR': 'Ошибка', 'CREATING': 'Создаётся', 'CREATED': 'Создана', 'RECOVERING': 'Восстановление'}.get(r.status, r.status) }}</span></div>
     <p class="quiet">{{r.requester}}</p>
 
     {% if r.error_message %}
@@ -14,7 +14,7 @@
     {% endif %}
 
     <div class="request-actions">
-    {% if r.status in ['PENDING','ERROR'] %}
+    {% if r.status in ['PENDING','ERROR'] and r.password_enc %}
     <form method="post" action="/requests/{{r.id}}/approve">
 <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
         <label>

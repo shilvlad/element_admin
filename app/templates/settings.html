@@ -3,6 +3,12 @@
 <h1>Настройки</h1>
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
 {% if saved %}<p>Настройки сохранены.</p>{% endif %}
+<h2>Срок действия заявки</h2>
+<form method="post" action="/settings/registration">
+<input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+<label>Срок в часах (1–720)<input type="number" name="hours" min="1" max="720" required value="{{ registration_hours }}"></label>
+<p>По умолчанию 72 часа. Изменение применяется и к существующим заявкам: просроченные ожидающие заявки закрываются, их пароли удаляются. При ошибке создания удаляется пароль, но логин остаётся зарезервированным до ручной сверки.</p>
+<button>Сохранить срок</button></form>
 <h2>Уведомления о новых заявках по email</h2>
 <p>Получатель: {{ admin_email }} (ADMIN_EMAIL в конфигурации сервера).</p>
 <form method="post" action="/settings/email" class="notification-settings">

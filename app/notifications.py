@@ -10,6 +10,7 @@ from .config import settings
 from .db import NotificationRoom, PanelSetting, RegistrationRequest, SessionLocal, audit
 from .matrix import MatrixClient, MatrixError
 from .mail import EMAIL_NOTICE_KEY, email_notices_enabled
+from .expiry import ttl_hours
 
 router = APIRouter()
 SETTING_KEY = "matrix_registration_notifications"
@@ -46,11 +47,13 @@ def settings_page(request, values, error=None, status_code=200, sender=None):
             sender = MatrixClient().whoami()
         except Exception:
             sender = "Не удалось определить: проверьте Matrix-токен"
+    with SessionLocal() as db:
+        registration_hours = ttl_hours(db)
     return templates.TemplateResponse("settings.html", {
         "request": request, "enabled": values["enabled"],
         "recipients": "\n".join(values["recipients"]), "sender": sender,
         "error": error, "saved": request.query_params.get("saved") == "1",
-        "email_enabled": email_notices_enabled(), "admin_email": settings.admin_email,
+        "registration_hours": registration_hours, "email_enabled": email_notices_enabled(), "admin_email": settings.admin_email,
     }, status_code=status_code)
 
 
