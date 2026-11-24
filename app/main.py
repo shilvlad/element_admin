@@ -2,6 +2,8 @@ from .build import build_info
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
 import time
+import asyncio
+from contextlib import suppress
 from email_validator import validate_email, EmailNotValidError
 from fastapi import FastAPI, Request, Form, Query, Depends, BackgroundTasks
 from typing import Literal
@@ -21,6 +23,7 @@ from .admin_views import router, fmt_time, user_url
 from .recovery import router as recovery_router
 from .notifications import router as settings_router, notify_registration
 from .updates import synapse_update_status
+from .expiry import router as expiry_router, expire_requests, expiry_loop, cutoff
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 
@@ -28,7 +31,14 @@ from argon2.exceptions import VerifyMismatchError
 @asynccontextmanager
 async def lifespan(app):
     init_db()
-    yield
+    await asyncio.to_thread(expire_requests)
+    task = asyncio.create_task(expiry_loop())
+    try:
+        yield
+    finally:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan, dependencies=[Depends(protect_forms)])
 app.add_middleware(SessionMiddleware, secret_key=settings.secret_key, https_only=settings.app_base_url.startswith("https://"), same_site="lax", max_age=28800)
@@ -40,6 +50,7 @@ templates.env.globals.update(fmt_time=fmt_time, user_url=user_url)
 app.include_router(router)
 app.include_router(recovery_router)
 app.include_router(settings_router)
+app.include_router(expiry_router)
 password_hasher = PasswordHasher()
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
@@ -121,6 +132,7 @@ def create_request(request: Request, background_tasks: BackgroundTasks, username
         requester = validate_email(requester.strip(), check_deliverability=False).normalized
     except EmailNotValidError:
         return invalid("Укажите корректный email заявителя")
+    expire_requests()
     uid = f"@{username}:{settings.matrix_server_name}"
     try:
         if MatrixClient().user_exists(uid):
@@ -131,7 +143,7 @@ def create_request(request: Request, background_tasks: BackgroundTasks, username
         # Include old requests created before username reservations were introduced.
         existing = db.scalar(select(RegistrationRequest.id).where(
             RegistrationRequest.username == username,
-            RegistrationRequest.status != "REJECTED"))
+            RegistrationRequest.status.notin_(("REJECTED", "EXPIRED"))))
         if existing is not None:
             return invalid("Заявка на этот логин уже существует", 409)
         req = RegistrationRequest(requester=requester.strip(), username=username,
@@ -155,16 +167,28 @@ def create_request(request: Request, background_tasks: BackgroundTasks, username
 @app.get("/requests")
 def requests_page(request: Request):
     if not admin_required(request): return login_redirect()
+    expire_requests()
     with SessionLocal() as db: rows = db.scalars(select(RegistrationRequest).order_by(desc(RegistrationRequest.created_at))).all()
     return templates.TemplateResponse("requests.html", {"request": request, "rows": rows})
 
 @app.post("/requests/{rid}/approve")
-def approve(request: Request, rid: int, is_admin: bool = Form(False)):
+def approve(request: Request, rid: int, is_admin: bool = Form(False), confirmed: bool = Form(False)):
     if not admin_required(request): return login_redirect()
+    expire_requests()
     with SessionLocal() as db:
         req = db.get(RegistrationRequest, rid)
         if not req or req.status not in ("PENDING", "ERROR"):
             return RedirectResponse("/requests", 303)
+        if not req.password_enc:
+            return templates.TemplateResponse("result.html", {"request": request,
+                "message": "Пароль заявки удалён. Сверьте аккаунт с Synapse; при его отсутствии отклоните заявку и создайте новую."}, status_code=409)
+        if req.created_at.replace(tzinfo=timezone.utc) <= cutoff(db):
+            db.close()
+            expire_requests()
+            return RedirectResponse("/requests", 303)
+        if is_admin and not confirmed:
+            return confirm_action(request, req.username, "Создать администратора Matrix",
+                "Пользователь получит права управления сервером Synapse.", {"is_admin": "true"}, "/requests")
         reservation = db.get(RegistrationReservation, req.username)
         if reservation and reservation.request_id != rid:
             req.error_message = "Этот логин зарезервирован другой заявкой. Отклоните дубликат."
@@ -176,7 +200,8 @@ def approve(request: Request, rid: int, is_admin: bool = Form(False)):
                 db.flush()
             claimed = db.execute(update(RegistrationRequest).where(
                 RegistrationRequest.id == rid,
-                RegistrationRequest.status.in_(("PENDING", "ERROR"))
+                RegistrationRequest.status.in_(("PENDING", "ERROR")),
+                RegistrationRequest.password_enc.is_not(None), RegistrationRequest.created_at > cutoff(db)
             ).values(status="CREATING", error_message=None), execution_options={"synchronize_session": False})
             if claimed.rowcount == 1:
                 operation = db.get(RegistrationOperation, rid)
@@ -322,8 +347,11 @@ def password_result(request, matrix, user_id, password, message):
 
 @app.post("/users/{user_id:path}/reset_password", include_in_schema=False)
 @app.post("/users/{user_id:path}/password")
-def reset_password(request: Request, user_id: str):
+def reset_password(request: Request, user_id: str, confirmed: bool = Form(False)):
     if not admin_required(request): return login_redirect()
+    if not confirmed:
+        return confirm_action(request, user_id, "Сбросить пароль",
+            "Старый пароль перестанет работать, активные сеансы будут завершены. Новый пароль будет отправлен на email профиля либо показан для ручной передачи.")
     password = generate_password()
     try:
         matrix = MatrixClient()
@@ -342,8 +370,11 @@ def reset_password(request: Request, user_id: str):
     return password_result(request, matrix, user_id, password, f"Пароль сброшен для {user_id}.")
 
 @app.post("/users/{user_id:path}/deactivate")
-def deactivate(request: Request,user_id:str):
+def deactivate(request: Request, user_id: str, confirmed: bool = Form(False)):
     if not admin_required(request): return login_redirect()
+    if not confirmed:
+        return confirm_action(request, user_id, "Деактивировать пользователя",
+            "Пользователь потеряет доступ к аккаунту. Это действие не является удалением всех его данных.")
     try: MatrixClient().update_user(user_id,deactivated=True); msg="деактивирован"; action="DEACTIVATE"
     except Exception as e: return templates.TemplateResponse("result.html", {"request":request,"message":str(e)},status_code=502)
     with SessionLocal() as db: audit(db,actor(request),action,user_id,client_ip(request)); db.commit()
@@ -426,3 +457,9 @@ def invite_global(request: Request, user_id: str):
         audit(db, actor(request), action, user_id, client_ip(request))
         db.commit()
     return templates.TemplateResponse("result.html", {"request": request, "message": message}, status_code=code)
+
+
+def confirm_action(request, target, title, consequence, fields=None, cancel_url="/users"):
+    return templates.TemplateResponse("confirm.html", {"request": request, "target": target,
+        "title": title, "consequence": consequence, "fields": fields or {}, "cancel_url": cancel_url},
+        headers={"Cache-Control": "no-store"})

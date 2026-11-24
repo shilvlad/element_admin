@@ -15,6 +15,12 @@ def database():
 
 class CSRFClient(TestClient):
     def post(self, url, **kwargs):
+        # Existing operation tests exercise the confirmed action; dialog tests
+        # explicitly pass confirmed=false to verify the first step.
+        if re.search(r"/(password|reset_password|deactivate|approve)$", str(url)):
+            data = dict(kwargs.pop('data', {}) or {})
+            data.setdefault('confirmed', 'true')
+            kwargs['data'] = data
         page = super().get('/login')
         token = re.search(r'name="csrf_token" value="([^"]+)"', page.text).group(1)
         headers = dict(kwargs.pop('headers', {}) or {})

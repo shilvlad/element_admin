@@ -1,0 +1,12 @@
+{% extends 'base.html' %}{% block content %}
+<h1>{{ title }}?</h1>
+<section class="card"><p>Учётная запись: <b>{{ target }}</b></p>
+<p>{{ consequence }}</p>
+<form method="post" action="{{ request.url.path | urlencode }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+<input type="hidden" name="confirmed" value="true">
+{% for key, value in fields.items() %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+<button type="submit" class="danger">Подтвердить</button>
+<a href="{{ cancel_url }}">Отмена</a>
+</form></section>
+{% endblock %}
